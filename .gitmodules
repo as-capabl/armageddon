@@ -1,0 +1,6 @@
+[submodule "hastodon"]
+	path = hastodon
+	url = https://github.com/as-capabl/hastodon.git
+[submodule "machinecell"]
+	path = machinecell
+	url = https://github.com/as-capabl/machinecell
