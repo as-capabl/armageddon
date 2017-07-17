@@ -2,16 +2,20 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE Strict, StrictData #-}
 
 module
     MainForm
 where
 
 import Prelude hiding ((.), id)
-import Control.Category
-import Control.Arrow
+
 import Data.Void
 import Data.Tree
+import Control.Category
+import Control.Arrow
+import Control.Lens hiding (set)
 import Control.Monad (mzero)
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
@@ -34,25 +38,52 @@ import qualified Web.Hastodon as Hdon
 import BasicModel
 
 data PostBox = PostBox {
-    postText :: TextBuffer,
-    postTextView :: TextView,
-    postButton :: Button
+    _postText :: TextBuffer,
+    _postTextView :: TextView,
+    _postButton :: Button
   }
 
-data TreePane = TreePane {
-    trModel :: TreeStore Text.Text,
-    trView :: TreeView,
-    trSel :: TreeSelection
+makeClassy ''PostBox
+
+data InstPane = InstPane {
+    _instModel :: TreeStore Text.Text,
+    _instView :: TreeView,
+    _instSel :: TreeSelection,
+    _instAddBtn :: Button,
+    _instMenuBtn :: Button
   }
 
-data MainForm = MainForm {
-    mfWindow :: Window,
-    mfPostBox :: PostBox,
-    mfTreePane :: TreePane,
-    mfTootPane :: WebView
+makeClassy ''InstPane
+
+data StatusPane = StatusPane {
+    _statusView :: WebView
   }
 
-setup :: Text.Text -> IO MainForm
+makeClassy ''StatusPane
+
+data T = T {
+    _win :: Window,
+    _pb :: PostBox,
+    _ip :: InstPane,
+    _sp :: StatusPane
+  }
+
+makeLenses ''T
+
+instance HasPostBox T
+  where
+    postBox = pb
+
+instance HasInstPane T
+  where
+    instPane = ip
+
+instance HasStatusPane T
+  where
+    statusPane = sp
+
+
+setup :: Text.Text -> IO T
 setup html =
   do
     window <- windowNew
@@ -60,7 +91,7 @@ setup html =
     windowSetPosition window WinPosCenter
 
     (mdPost, wPost) <- setupPostBox
-    (mdTree, wTree) <- setupTreePane
+    (mdTree, wTree) <- setupInstPane
     (mdToot, wToot) <- setupTootPane html
 
     -- Pane composition
@@ -76,12 +107,7 @@ setup html =
 
     widgetShowAll window
 
-    return $ MainForm {
-        mfWindow = window,
-        mfPostBox = mdPost,
-        mfTreePane = mdTree,
-        mfTootPane = mdToot
-      }
+    return $ T window mdPost mdTree mdToot
 
 setupPostBox =
   do
@@ -106,8 +132,9 @@ setupPostBox =
 
     return (PostBox textModel textView button, hbox)
 
-setupTreePane =
+setupInstPane =
   do
+    -- Tree view
     treeModel <- treeStoreNew
       [
         Node "pawoo.net"
@@ -130,7 +157,22 @@ setupTreePane =
 
     treeSel <- treeViewGetSelection treeView
 
-    return (TreePane treeModel treeView treeSel, treeView)
+    -- Buttons
+    addBtn <- buttonNew
+    buttonSetLabel addBtn ("+" :: Text.Text)
+    menuBtn <- buttonNew
+    buttonSetLabel menuBtn ("=" :: Text.Text)
+
+    hboxBtn <- hBoxNew False 5
+    boxPackStart hboxBtn addBtn PackNatural 0
+    boxPackEnd hboxBtn menuBtn PackNatural 0
+
+    -- Packing
+    vbox <- vBoxNew False 5
+    boxPackStart vbox hboxBtn PackNatural 0
+    boxPackStart vbox treeView PackGrow 0
+
+    return (InstPane treeModel treeView treeSel addBtn menuBtn, vbox)
 
 setupTootPane html =
   do
@@ -148,14 +190,14 @@ setupTootPane html =
         (Just "text/html")
         "about:armageddon"
 
-    return (webView, scrollWin)
+    return (StatusPane webView, scrollWin)
 
-getDataSource :: TreePane -> IO (Maybe DataSource)
+getDataSource :: HasInstPane self => self -> IO (Maybe DataSource)
 getDataSource tp = runMaybeT $
   do
-    rows <- lift $ treeSelectionGetSelectedRows (trSel tp)
+    rows <- lift $ treeSelectionGetSelectedRows (tp ^. instSel)
     path <- foldr (\x _ -> return x) mzero rows
-    str <- lift $ treeStoreGetValue (trModel tp) path
+    str <- lift $ treeStoreGetValue (tp ^. instModel) path
     kind <- if
         | str == "home" -> return DSHome
         | str == "public" -> return DSPublic

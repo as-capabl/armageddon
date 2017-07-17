@@ -9,13 +9,18 @@
 module
     Graphics.UI.McGtk
       (
+        -- * Event handling
         on,
         Replying(..),
         ReplyingV(..),
         Looking'(..),
         looking,
 
-        gtkReactimate
+        -- * Running
+        gtkReactimate,
+
+        -- * Utility
+        onClicked
       )
 where
 
@@ -156,4 +161,20 @@ gtkReactimate sf =
     liftBase Gtk.initGUI
     Mc.start (liftBase Gtk.mainQuit) sf
     liftBase Gtk.mainGUI
+
+--
+-- Utility
+--
+
+onClicked ::
+    (Mc.WorldRunner IO m (wr IO m), Monad m, Gtk.WidgetClass self) =>
+    self -> Mc.ProcessT m (Mc.World IO m wr) (Mc.Event ())
+onClicked w = proc world ->
+  do
+    mouse <-
+        w `on` Gtk.buttonPressEvent
+            `looking` ((,) <$> Gtk.eventClick <*> Gtk.eventButton)
+                -< world
+    click <- Mc.filterEvent (== (Gtk.SingleClick, Gtk.LeftButton)) -< mouse
+    returnA -< Mc.collapse click
 

@@ -1,4 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE Strict, StrictData #-}
+
 module
     BasicModel
 where

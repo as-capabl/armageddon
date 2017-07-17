@@ -3,6 +3,7 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE Strict, StrictData #-}
 
 module
     Main
@@ -11,6 +12,7 @@ where
 import Prelude hiding ((.), id)
 import Control.Category
 import Control.Arrow
+import Control.Lens hiding (set)
 import Data.Void
 import Data.Tree
 import Control.Monad (forever)
@@ -20,7 +22,7 @@ import Control.Monad.Trans.Resource
 import qualified Data.Text as Text
 import Control.Concurrent (forkIO, threadDelay)
 
-import Graphics.UI.Gtk hiding (on)
+import Graphics.UI.Gtk hiding (on, onClicked)
 import Graphics.UI.Gtk.WebKit.WebFrame
 import Graphics.UI.Gtk.WebKit.WebView
 import Graphics.UI.Gtk.ModelView.TreeStore
@@ -57,10 +59,14 @@ main = gtkReactimate mainArrow
 
 
 mainArrow :: ProcessT IO TheWorld (Event Void)
-mainArrow = proc world ->
+mainArrow = evolve $
   do
-    mf <- constructT setup <<< onActivation -< world
-    rSwitch muted -< (world, runMainForm <$> mf)
+    switchAfter $
+        muted &&& onActivation
+    mfcli <- switchAfter $ proc world ->
+        muted &&& constructT setup -< collapse world
+    finishWith $
+        runMainForm mfcli
   where
     setup =
       do
@@ -74,52 +80,49 @@ mainArrow = proc world ->
             "8013afc7a192c032c6b68dd965116e27a0d614e44c8c252707f23b2596ce8808"
             "3553df5b2d86e69aab6c047c3df60ab853333968a73f1de1ac949460d2946505"
 
-runMainForm :: (MainForm.MainForm, Hdon.HastodonClient) -> ProcessT IO TheWorld (Event Void)
+runMainForm :: (MainForm.T, Hdon.HastodonClient) -> ProcessT IO TheWorld (Event Void)
 runMainForm (mf, cli) = proc world ->
   do
-    treeSelected <- (MainForm.trSel $ MainForm.mfTreePane mf) `on`
-        treeSelectionSelectionChanged
-            -< world
-    dsByTree <- fork <<< fire0 (MainForm.getDataSource $ MainForm.mfTreePane mf) -< treeSelected
-
     frameLoad <-
-        MainForm.mfTootPane mf `on` documentLoadFinished
+        mf ^. MainForm.statusView `on` documentLoadFinished
             -< world
 
-    fetchDs <- gather -< [initDs <$  frameLoad, dsByTree]
-    wrSwitch (pure ()) -< ((world, ()), fetch <$> fetchDs)
+    treeSelected <-
+        mf ^. MainForm.instSel `on` treeSelectionSelectionChanged
+            -< world
 
-    tootMouse <-
-        MainForm.postButton (MainForm.mfPostBox mf)
-            `on` buttonPressEvent
-            `looking` ((,) <$> eventClick <*> eventButton)
-                -< world
-    tootClick <- filterEvent (== (SingleClick, LeftButton)) -< tootMouse
-    wrSwitch (pure ()) -< ((world, ()), toot <$ tootClick)
+    newDs <-
+        filterJust <<< fire0 (MainForm.getDataSource mf)
+            -< treeSelected `mappend` collapse frameLoad
+
+    wrSwitch0 -< ((world, ()), fetch <$> newDs)
+
+    tootClick <-
+        onClicked $ mf ^. MainForm.postButton
+            -< world
+    wrSwitch0 -< ((world, ()), toot <$ tootClick)
 
     del <-
-        MainForm.mfWindow mf `on` deleteEvent `Replying` False
+        mf ^. MainForm.win `on` deleteEvent `Replying` False
             -< world
     construct (await >> stop) -< del
   where
     initDs = BasicModel.DataSource "" "" BasicModel.DSHome
-    fetch = fetchPublicTimeline (MainForm.mfTootPane mf) cli
+    fetch = fetchPublicTimeline (mf ^. MainForm.statusView) cli
     toot = proc (world, _) ->
       do
-        fire0 (postToot (MainForm.mfPostBox mf) cli) <<< onActivation -< world
-        returnA -< ()
+        fire0 (postToot (mf ^. MainForm.postBox) cli) <<< onActivation -< world
 
 fetchPublicTimeline ::
     WebView ->
     Hdon.HastodonClient ->
     BasicModel.DataSource ->
-    ProcessT IO (TheWorld, ()) ()
+    ProcessT IO (TheWorld, ()) (Event Void)
 fetchPublicTimeline wv cli ds0 = proc (world, ()) ->
   do
     fire0 (clearWebView wv) <<< onActivation -< world
     sts <- Async.runResource priorityDefaultIdle fetchThread -< world
-    fire (prependStatus wv) -< sts
-    returnA -< ()
+    muted <<< fire (prependStatus wv) -< sts
   where
     fetchThread = constructT $
       do
@@ -149,7 +152,7 @@ clearWebView wv = runMaybeT go >> return ()
         doc <- MaybeT $ webViewGetDomDocument wv
         body <- MaybeT $ DOM.getBody doc
 
-        forever $
+        forever $ -- Until getFirstChild fails
           do
             ch <- MaybeT $ DOM.getFirstChild body
             DOM.removeChild body (Just ch)
@@ -169,7 +172,7 @@ prependStatus wv st = runMaybeT go >> return ()
 
 postToot form cli =
   do
-    let postText = MainForm.postText form
+    let postText = form ^. MainForm.postText
     (beginPos, endPos) <- textBufferGetBounds postText
     content <- textBufferGetText postText beginPos endPos False
     textBufferDelete postText beginPos endPos

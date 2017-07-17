@@ -23,6 +23,9 @@ module
         wkSwitch,
         wSwitch,
         wrSwitch,
+        wrSwitch0,
+        wkSwitchAfter,
+        wSwitchAfter,
 
         wConst,
         wHold,
@@ -33,10 +36,12 @@ where
 import Prelude hiding ((.), id)
 import Control.Category
 import Control.Arrow
+import Control.Monad (forever)
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Maybe
 import Control.Monad.Base
+import Control.Monad.Cont (cont, runCont)
 import qualified Control.Arrow.Machine as P
 import qualified Control.Arrow.Machine.Misc.Discrete as D
 import Unsafe.Coerce
@@ -141,35 +146,23 @@ listen ::
     ((a -> instr ()) -> m h) ->
     (h -> m ()) ->
     P.ProcessT m (World instr m wr) (P.Event a)
-listen reg disposer =
-    P.switch initial listening
-  where
-    initial = proc (world@(World env _)) ->
+listen reg disposer = P.evolve $ forever $
+  do
+    env <- P.switchAfter $ proc (world@(World env _)) ->
       do
-        initMsg <- onActivation -< world
-        tp <- P.fire initialProc -< env <$ initMsg
+        act <- onActivation -< world
+        P.muted *** returnA -< (world, env <$ act)
 
-        mt <- P.muted -< world
-        returnA -< (mt, tp)
+    myID <- lift $ newID (envGetRun env) env
+    h <- lift $ reg (handleProc env myID . unsafeCoerce)
 
-    listening tp =
-        P.switch (listener tp) $ \_ -> P.switch initial listening
-
-    initialProc env =
-      do
-        let wr = envGetRun env
-        myID <- newID wr env
-        h <- reg (handleProc env myID . unsafeCoerce)
-        return (myID, h)
-
-    listener (myID, h) = proc world ->
+    P.switchAfter $ proc world ->
       do
         inact <- onInactivation -< world
-        P.fire $ disposer -< h <$ inact
-
         ea <- listenID -< (world, myID)
-
         returnA -< (unsafeCoerce <$> ea, inact)
+
+    lift $ disposer h
 
 
 handleProc ::
@@ -269,44 +262,54 @@ wkSwitch ::
     P.ProcessT m ((World instr m wr, b), c) (P.Event t) ->
     (P.ProcessT m (World instr m wr, b) c -> t -> P.ProcessT m (World instr m wr, b) c) ->
     P.ProcessT m (World instr m wr, b) c
-wkSwitch sf test k =
-    P.dkSwitch sf test terminating
-  where
-    terminating sf' t = P.gSwitch (prefeeder inactID) sf' id $
-        \sf'' _ -> reactivating (k sf'' t)
-
-    reactivating sf' = P.gSwitch (prefeeder actID) sf' id $ \sf'' _ -> sf''
-
-
+wkSwitch sf test k = P.evolve $
+  do
+    (sf', t) <- P.dkSwitchAfter test sf
+    (sf'', _) <- P.gSwitchAfter (prefeeder inactID) id sf'
+    (sf''', _) <- P.gSwitchAfter (prefeeder actID) id $ k sf'' t
+    P.finishWith sf'''
 
 wSwitch ::
     (WorldRunner instr m (wr instr m), Monad m) =>
     P.ProcessT m (World instr m wr, b) (c, P.Event t) ->
     (t -> P.ProcessT m (World instr m wr, b) c) ->
     P.ProcessT m (World instr m wr, b) c
-wSwitch sf k =
-    P.dgSwitch (id &&& pure ()) sf (arr fst) terminating
-  where
-    terminating sf' t =
-        P.gSwitch (prefeeder inactID) sf' (arr $ \((y, _), t) -> (y, t)) $
-            \_ _ -> reactivating (k t)
-
-    reactivating sf' = P.gSwitch (prefeeder actID) sf' id $ \sf'' _ -> sf''
+wSwitch sf k = P.evolve $
+  do
+    (sf', t) <- P.dgSwitchAfter (id &&& pure ()) (arr fst) sf
+    _ <- P.gSwitchAfter (prefeeder inactID) (first (arr fst)) sf'
+    (sf''', _) <- P.gSwitchAfter (prefeeder actID) id $ k t
+    P.finishWith sf'''
 
 
 wrSwitch ::
     (WorldRunner instr m (wr instr m), Monad m) =>
     P.ProcessT m (World instr m wr, b) c ->
     P.ProcessT m ((World instr m wr, b), P.Event (P.ProcessT m (World instr m wr, b) c)) c
-wrSwitch sf =
-    P.dgSwitch id sf id terminating
-  where
-    terminating sf' nx = P.gSwitch (arr fst >>> prefeeder inactID) sf' id $
-        \_ _ -> reactivating nx
+wrSwitch sf = P.evolve $
+  do
+    (sf', nx) <- P.dgSwitchAfter id id sf
+    _ <- P.gSwitchAfter (arr fst >>> prefeeder inactID) id sf'
+    (nx', _) <- P.gSwitchAfter (arr fst >>> prefeeder actID) id nx
+    P.finishWith $ wrSwitch nx'
 
-    reactivating nx' = P.gSwitch (arr fst >>> prefeeder actID) nx' id $
-        \nx'' _ -> wrSwitch nx''
+wrSwitch0 ::
+    (WorldRunner instr m (wr instr m), Monad m, P.Occasional c) =>
+    P.ProcessT m ((World instr m wr, b), P.Event (P.ProcessT m (World instr m wr, b) c)) c
+wrSwitch0 = wrSwitch (P.muted . arr fst)
 
+wSwitchAfter ::
+    (WorldRunner instr m (wr instr m), Monad m) =>
+    P.ProcessT m (World instr m wr, b) (c, P.Event r) ->
+    P.Evolution (World instr m wr, b) c m r
+wSwitchAfter sf = P.Evolution $ cont $ wSwitch sf
+
+wkSwitchAfter ::
+    (WorldRunner instr m (wr instr m), Monad m) =>
+    P.ProcessT m ((World instr m wr, b), c) (P.Event r) ->
+    P.ProcessT m (World instr m wr, b) c ->
+    P.Evolution (World instr m wr, b) c m (P.ProcessT m (World instr m wr, b) c, r)
+wkSwitchAfter test sf = P.Evolution $ cont $ wkSwitch sf test . curry
 
 --
 -- World discrete
