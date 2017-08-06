@@ -63,7 +63,6 @@ library
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.8 && <5,
                        mtl >=2.2 && <2.3,
-                       array,
                        machinecell >= 4 && < 5,
                        transformers-base,
                        transformers,
