@@ -12,11 +12,13 @@ import Control.Category
 import Control.Arrow
 import Data.Void
 import Data.Tree
+import Control.Monad (forever)
 import Control.Monad.Trans
+import Control.Monad.Trans.State
 import Control.Monad.Trans.Resource
 import qualified Data.Text as Text
 
-import Graphics.UI.Gtk
+import Graphics.UI.Gtk hiding (get)
 
 import Control.Arrow.Machine hiding (run)
 import qualified Graphics.UI.McGtk as Mg
@@ -28,53 +30,61 @@ import qualified Control.Concurrent.Chan.Unagi.NoBlocking as Unagi
 
 type TheWorld = World IO IO IORefRunner
 
+
+data PollStrategy = PollIdle Priority
+
+pollStart (PollIdle priority) f = idleAdd f priority
+
+pollEnd (PollIdle _) = idleRemove
+
 run ::
-    Priority ->
+    PollStrategy ->
     ProcessT IO (Event ()) (Event a) ->
     ProcessT IO TheWorld (Event a)
-run = run' id
+run = run' forkIO
 
 runResource ::
-    Priority ->
+    PollStrategy ->
     ProcessT (ResourceT IO) (Event ()) (Event a) ->
     ProcessT IO TheWorld (Event a)
-runResource = run' runResourceT
+runResource = run' (forkIO . runResourceT)
 
-run' runner priority body = proc world ->
-    wSwitch (muted *** (pure noEvent >>> ignite)) (\arg -> arr fst >>> listenIt arg)
-        -< (world, world)
-  where
-    ignite = constructT $
-      do
-        (inC, outC) <- lift $ Unagi.newChan
-        threadId <- lift $ forkIO $ runner $ runT (liftIO . Unagi.writeChan inC) body (repeat ())
-        yield (outC, threadId)
+run' runner poll body = evolve $
+  do
+    wSwitchAfter (muted &&& onActivation)
 
-    listenIt (outC, threadId) = proc world ->
+    (inC, outC) <- lift $ Unagi.newChan
+    threadId <- lift $ runner $
+        runT (liftIO . Unagi.writeChan inC) body (repeat ())
+
+    wFinishWith $ proc world ->
       do
         idle <- listen
-            (\h -> idleAdd (do {b <- Unagi.isActive outC; h b; return b}) priority)
-            (\sigId -> idleRemove sigId >> killThread threadId)
+            (\h -> pollStart poll  (do {b <- Unagi.isActive outC; h b; return b}))
+            (\sigId -> pollEnd poll sigId >> killThread threadId)
                 -< world
-        constructT (consume outC) -< idle
+        consume outC -< idle
 
-    consume outC =
+consume ::
+    MonadIO m =>
+    Unagi.OutChan a -> ProcessT m (Event Bool) (Event a)
+consume outC = constructT $
+  do
+    el0 <- liftIO $ Unagi.tryReadChan outC
+    evalStateT `flip` el0 $ forever $
       do
-        el <- lift $ Unagi.tryReadChan outC
-        consumeEl outC el
-
-    consumeEl outC el =
-      do
-        mx <- lift $ Unagi.tryRead el
-        el' <- case mx
+        el <- get
+        mx <- liftIO $ Unagi.tryRead el
+        case mx
           of
             Just x ->
               do
-                yield x
-                lift $ Unagi.tryReadChan outC
+                lift $ yield x
+                el' <- liftIO $ Unagi.tryReadChan outC
+                put el'
             Nothing ->
               do
-                b <- await
-                if not b then stop else return el
-        consumeEl outC el'
+                b <- lift await
+                lift $ if b then return () else stop
+
 

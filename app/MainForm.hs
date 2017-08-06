@@ -37,16 +37,41 @@ import qualified Web.Hastodon as Hdon
 
 import BasicModel
 
+--
+-- Item of ListView (private)
+--
+data DSItem = DsiReg Registration | DsiDs DataSource deriving (Eq, Show)
+
+makeDsiTree x =
+    Node (DsiReg x)
+      [
+        Node (DsiDs (DataSource x DSHome)) [],
+        Node (DsiDs (DataSource x DSPublic)) []
+        --, Node "notification" []
+      ]
+
+dsiLabel (DsiReg reg) = reg ^. host
+dsiLabel (DsiDs (DataSource _ DSHome)) = "home"
+dsiLabel (DsiDs (DataSource _ DSPublic)) = "public"
+
+getDs (DsiReg reg) = DataSource reg DSHome
+getDs (DsiDs ds) = ds
+
+--
+-- GUI objects
+--
 data PostBox = PostBox {
     _postText :: TextBuffer,
     _postTextView :: TextView,
-    _postButton :: Button
+    _postButton :: Button,
+    _postDst :: ListStore Registration,
+    _postDstCombo :: ComboBox
   }
 
 makeClassy ''PostBox
 
 data InstPane = InstPane {
-    _instModel :: TreeStore Text.Text,
+    _instModel :: TreeStore DSItem,
     _instView :: TreeView,
     _instSel :: TreeSelection,
     _instAddBtn :: Button,
@@ -69,20 +94,13 @@ data T = T {
   }
 
 makeLenses ''T
+instance HasPostBox T where {postBox = pb}
+instance HasInstPane T where {instPane = ip}
+instance HasStatusPane T where {statusPane = sp}
 
-instance HasPostBox T
-  where
-    postBox = pb
-
-instance HasInstPane T
-  where
-    instPane = ip
-
-instance HasStatusPane T
-  where
-    statusPane = sp
-
-
+--
+-- Construction
+--
 setup :: Text.Text -> IO T
 setup html =
   do
@@ -111,6 +129,7 @@ setup html =
 
 setupPostBox =
   do
+    -- Text area
     textView <- textViewNew
     textModel <- textViewGetBuffer textView
     {-
@@ -120,6 +139,7 @@ setupPostBox =
         lift $ windowSetDefaultSize textWin 100 (-1)
     -}
 
+    -- Button
     button <- buttonNew
     buttonSetLabel button ("Toot" :: Text.Text)
 
@@ -130,28 +150,34 @@ setupPostBox =
     boxPackStart hbox textView PackGrow 0
     boxPackStart hbox btnAlign PackNatural 0
 
-    return (PostBox textModel textView button, hbox)
+    -- Destination combo
+    dst <- listStoreNew []
+    dstCmb <- comboBoxNewWithModel dst
+    hboxDst <- hBoxNew False 5
+    boxPackStart hboxDst dstCmb PackNatural 0
+
+    renderer <- cellRendererTextNew
+    cellLayoutPackStart dstCmb renderer False
+    cellLayoutSetAttributes dstCmb renderer dst (\ind -> [cellText := ind ^. host])
+
+    vbox <- vBoxNew False 5
+    boxPackStart vbox hboxDst PackNatural 0
+    boxPackStart vbox hbox PackGrow 0
+
+    return (PostBox textModel textView button dst dstCmb, vbox)
 
 setupInstPane =
   do
     -- Tree view
-    treeModel <- treeStoreNew
-      [
-        Node "pawoo.net"
-          [
-            Node "public" [],
-            Node "home" []
-            --, Node "notification" []
-          ]
-      ]
+    treeModel <- treeStoreNew []
+
     treeView <- treeViewNewWithModel treeModel
-    renderer <- cellRendererTextNew
 
     col <- treeViewColumnNew
     treeViewColumnSetTitle col ("Instances" :: Text.Text)
     renderer <- cellRendererTextNew
     cellLayoutPackStart col renderer False
-    cellLayoutSetAttributes col renderer treeModel (\ind -> [cellText := ind])
+    cellLayoutSetAttributes col renderer treeModel (\ind -> [cellText := dsiLabel ind])
 
     treeViewAppendColumn treeView col
 
@@ -192,15 +218,22 @@ setupTootPane html =
 
     return (StatusPane webView, scrollWin)
 
+--
+-- Getter & Modification
+--
+
+addRegistration :: T -> Registration -> IO ()
+addRegistration this reg =
+  do
+    treeStoreInsertTree (this ^. instModel) [] 0 (makeDsiTree reg)
+    listStoreAppend (this ^. postDst) reg
+    return ()
+
 getDataSource :: HasInstPane self => self -> IO (Maybe DataSource)
 getDataSource tp = runMaybeT $
   do
     rows <- lift $ treeSelectionGetSelectedRows (tp ^. instSel)
     path <- foldr (\x _ -> return x) mzero rows
-    str <- lift $ treeStoreGetValue (tp ^. instModel) path
-    kind <- if
-        | str == "home" -> return DSHome
-        | str == "public" -> return DSPublic
-        | str == "notification" -> return DSNotification
-        | otherwise -> return DSHome
-    return $ DataSource "" "" kind
+    dsi <- lift $ treeStoreGetValue (tp ^. instModel) path
+
+    return $ getDs dsi

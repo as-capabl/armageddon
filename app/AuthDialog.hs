@@ -29,14 +29,16 @@ import Control.Arrow.Machine.IORefRunner
 
 import qualified Web.Hastodon as Hdon
 
+import BasicModel
 
-showDialog host clientId clientSecret =
+authPasswd host clientId clientSecret =
   do
     mauth <- showPassDlg
     maybe (return Nothing) `flip` mauth $ \(user, pass) ->
       do
         mcli <- Hdon.mkHastodonClient clientId clientSecret user pass host
-        maybe (showDialog host clientId clientSecret) (return . Just) mcli
+        let mreg = Registration <$> mcli <*> pure (Text.pack user)
+        maybe (authPasswd host clientId clientSecret) (return . Just) mreg
 
   where
     showPassDlg =

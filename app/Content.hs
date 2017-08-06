@@ -29,7 +29,7 @@ initialHtml = TextL.toStrict $ TextL.toLazyText html
       [
         "<html>",
         "<head>", head, "</head>\n",
-        "<body>", "<div></div>", "</body>\n",
+        "<body>", "<div id=\"timeline\"></div>", "</body>\n",
         "</html>"
       ]
     head = mconcat
@@ -49,6 +49,11 @@ initialHtml = TextL.toStrict $ TextL.toLazyText html
         "padding: 10pt 10pt 10pt 10pt;",
         "border: solid thin blue"
       ]
+
+getTimelineParent ::
+    MonadIO m =>
+    DOM.Document -> m (Maybe DOM.Element)
+getTimelineParent doc = DOM.getElementById doc ("timeline" :: Text.Text)
 
 domifyStatus ::
     MonadIO m =>

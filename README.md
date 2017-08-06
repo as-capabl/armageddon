@@ -2,10 +2,15 @@
 GUI mastodon client written in Haskell
 
 ## How to build
-- External library: libgtk
-- Build tool: stack
+Build requirements are below.
 
-Execute `stack build`.
+- External library
+    -libgtk
+- Build tool
+    - [stack](https://docs.haskellstack.org/en/stable/README/)
+    - gtk2hs-buildtool -- run `stack install gtk2hs-buildtool` command to install the program in your local stack environment.
+
+Install requirements and execute `stack build`.
 
 The gtk2hs build chain has trouble with nonstandard locale.
 

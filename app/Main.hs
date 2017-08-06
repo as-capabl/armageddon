@@ -43,8 +43,9 @@ import Control.Arrow.Machine.ConduitAdaptor
 
 import qualified Web.Hastodon as Hdon
 
-import qualified BasicModel
+import BasicModel
 import qualified Content
+import qualified DB
 import qualified Async
 import qualified MainForm
 import qualified AuthDialog
@@ -63,29 +64,33 @@ mainArrow = evolve $
   do
     switchAfter $
         muted &&& onActivation
-    mfcli <- switchAfter $ proc world ->
-        muted &&& constructT setup -< collapse world
-    finishWith $
-        runMainForm mfcli
-  where
-    setup =
-      do
-        mcli <- lift auth
-        frm <- lift $ MainForm.setup Content.initialHtml
-        maybe (return ()) (\cli -> yield (frm, cli)) mcli
-    auth =
-      do
-        AuthDialog.showDialog
-            "pawoo.net"
-            "8013afc7a192c032c6b68dd965116e27a0d614e44c8c252707f23b2596ce8808"
-            "3553df5b2d86e69aab6c047c3df60ab853333968a73f1de1ac949460d2946505"
 
-runMainForm :: (MainForm.T, Hdon.HastodonClient) -> ProcessT IO TheWorld (Event Void)
-runMainForm (mf, cli) = proc world ->
+    mreg <- lift authNew
+    maybe stop `flip` mreg $ \reg ->
+      do
+        frm <- lift $ MainForm.setup Content.initialHtml
+        lift $ MainForm.addRegistration frm reg
+        finishWith $ runMainForm frm
+
+authNew =
+  do
+    AuthDialog.authPasswd
+        "pawoo.net"
+        "8013afc7a192c032c6b68dd965116e27a0d614e44c8c252707f23b2596ce8808"
+        "3553df5b2d86e69aab6c047c3df60ab853333968a73f1de1ac949460d2946505"
+
+runMainForm :: MainForm.T -> ProcessT IO TheWorld (Event Void)
+runMainForm mf = proc world ->
   do
     frameLoad <-
         mf ^. MainForm.statusView `on` documentLoadFinished
             -< world
+
+    addClick <-
+        onClicked $ mf ^. MainForm.instAddBtn
+            -< world
+    newReg <- filterJust <<< fire0 authNew -< addClick
+    fire $ forkIO . DB.writeReg -< newReg
 
     treeSelected <-
         mf ^. MainForm.instSel `on` treeSelectionSelectionChanged
@@ -107,21 +112,19 @@ runMainForm (mf, cli) = proc world ->
             -< world
     construct (await >> stop) -< del
   where
-    initDs = BasicModel.DataSource "" "" BasicModel.DSHome
-    fetch = fetchPublicTimeline (mf ^. MainForm.statusView) cli
+    fetch = fetchPublicTimeline (mf ^. MainForm.statusView)
     toot = proc (world, _) ->
       do
-        fire0 (postToot (mf ^. MainForm.postBox) cli) <<< onActivation -< world
+        fire0 (postToot $ mf ^. MainForm.postBox) <<< onActivation -< world
 
 fetchPublicTimeline ::
     WebView ->
-    Hdon.HastodonClient ->
     BasicModel.DataSource ->
     ProcessT IO (TheWorld, ()) (Event Void)
-fetchPublicTimeline wv cli ds0 = proc (world, ()) ->
+fetchPublicTimeline wv ds0 = proc (world, ()) ->
   do
     fire0 (clearWebView wv) <<< onActivation -< world
-    sts <- Async.runResource priorityDefaultIdle fetchThread -< world
+    sts <- Async.runResource (Async.PollIdle priorityDefaultIdle) fetchThread -< world
     muted <<< fire (prependStatus wv) -< sts
   where
     fetchThread = constructT $
@@ -130,11 +133,11 @@ fetchPublicTimeline wv cli ds0 = proc (world, ()) ->
         mapM_ yield $ reverse sts
         auto $ sourceReadDs ds0 C.=$= filterLeftC C.=$= filterUpdateC
 
-    initialReadDs (BasicModel.DataSource _ _ BasicModel.DSHome) = Hdon.getHomeTimeline cli
-    initialReadDs _ = Hdon.getPublicTimeline cli
+    initialReadDs ds@(DataSource _ DSHome) = Hdon.getHomeTimeline (ds ^. hastodonClient)
+    initialReadDs ds = Hdon.getPublicTimeline (ds ^. hastodonClient)
 
-    sourceReadDs (BasicModel.DataSource _ _ BasicModel.DSHome) = Hdon.sourceUserTimeline cli
-    sourceReadDs _ = Hdon.sourcePublicTimeline cli
+    sourceReadDs ds@(DataSource cli DSHome) = Hdon.sourceUserTimeline (ds ^. hastodonClient)
+    sourceReadDs ds = Hdon.sourcePublicTimeline (ds ^. hastodonClient)
 
     filterLeftC = C.awaitForever $ \case
         Left err -> trace ("No Parse: " ++ err) $ return ()
@@ -150,7 +153,7 @@ clearWebView wv = runMaybeT go >> return ()
     go =
       do
         doc <- MaybeT $ webViewGetDomDocument wv
-        body <- MaybeT $ DOM.getBody doc
+        body <- MaybeT $ Content.getTimelineParent doc
 
         forever $ -- Until getFirstChild fails
           do
@@ -163,25 +166,36 @@ prependStatus wv st = runMaybeT go >> return ()
     go =
       do
         doc <- MaybeT $ webViewGetDomDocument wv
-        body <- MaybeT $ DOM.getBody doc
+        body <- MaybeT $ Content.getTimelineParent doc
 
         ch <- MaybeT $ Content.domifyStatus doc st
 
         mfc <- lift $ DOM.getFirstChild body
         DOM.insertBefore body (Just ch) mfc
 
-postToot form cli =
+postToot form =
   do
+    -- Get text
     let postText = form ^. MainForm.postText
     (beginPos, endPos) <- textBufferGetBounds postText
     content <- textBufferGetText postText beginPos endPos False
-    textBufferDelete postText beginPos endPos
 
-    putStrLn content
-    forkIO $
+    runMaybeT $
       do
-        r <- Hdon.postStatus content cli
-        print r
-        return ()
+        -- Get destination
+        postItr <- MaybeT $ comboBoxGetActiveIter $ form ^. MainForm.postDstCombo
+        reg <- lift $ listStoreGetValue (form ^. MainForm.postDst) (listStoreIterToIndex postItr)
+
+        -- Post it
+        lift $ forkIO $
+          do
+            r <- Hdon.postStatus content (reg ^. hastodonClient)
+            print r
+            return ()
+
+        -- Clear text area
+        lift $ textBufferDelete postText beginPos endPos
+
+    return ()
 
 
