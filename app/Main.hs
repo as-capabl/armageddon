@@ -45,6 +45,7 @@ import qualified Web.Hastodon as Hdon
 
 import BasicModel
 import qualified Content
+import qualified DataModel
 import qualified DB
 import qualified Async
 import qualified MainForm
@@ -56,72 +57,87 @@ type TheWorld = World IO IO IORefRunner
 
 
 main :: IO ()
-main = gtkReactimate mainArrow
-
-
-mainArrow :: ProcessT IO TheWorld (Event Void)
-mainArrow = evolve $
+main = gtkReactimate $ evolve $
   do
+    model <- DataModel.init
+
     switchAfter $
         muted &&& onActivation
 
-    mreg <- lift authNew
-    maybe stop `flip` mreg $ \reg ->
+    frm <- lift $ MainForm.setup Content.initialHtml
+    finishWith $ driveMainForm model frm
+
+
+authNew :: DataModel.T -> ProcessT IO (TheWorld, Event ()) (Event Void)
+authNew model = evolve $ forever $
+  do
+    wSwitchAfter $ muted *** id
+    liftIO $ postGUIAsync $
       do
-        frm <- lift $ MainForm.setup Content.initialHtml
-        lift $ MainForm.addRegistration frm reg
-        finishWith $ runMainForm frm
+        mreg <- showDlg
+        case mreg
+          of
+            Just reg -> liftIO $ DataModel.addRegistration model reg
+            Nothing -> return ()
+  where
+    showDlg =
+      do
+        AuthDialog.authPasswd
+            "pawoo.net"
+            "8013afc7a192c032c6b68dd965116e27a0d614e44c8c252707f23b2596ce8808"
+            "3553df5b2d86e69aab6c047c3df60ab853333968a73f1de1ac949460d2946505"
 
-authNew =
+
+
+driveMainForm :: DataModel.T -> MainForm.T -> ProcessT IO TheWorld (Event Void)
+driveMainForm model mf = proc world ->
   do
-    AuthDialog.authPasswd
-        "pawoo.net"
-        "8013afc7a192c032c6b68dd965116e27a0d614e44c8c252707f23b2596ce8808"
-        "3553df5b2d86e69aab6c047c3df60ab853333968a73f1de1ac949460d2946505"
+    fire0 (DataModel.loadSetting model) <<< onActivation -< world
 
-runMainForm :: MainForm.T -> ProcessT IO TheWorld (Event Void)
-runMainForm mf = proc world ->
-  do
-    frameLoad <-
-        mf ^. MainForm.statusView `on` documentLoadFinished
-            -< world
-
+    -- Instance Pane
     addClick <-
         onClicked $ mf ^. MainForm.instAddBtn
             -< world
-    newReg <- filterJust <<< fire0 authNew -< addClick
-    fire $ forkIO . DB.writeReg -< newReg
+
+    authNew model -< (world, addClick)
+
+    modelReg <- DataModel.onAddReg model -< world
+    fire $ MainForm.addRegistration mf -< modelReg
 
     treeSelected <-
         mf ^. MainForm.instSel `on` treeSelectionSelectionChanged
             -< world
-
     newDs <-
         filterJust <<< fire0 (MainForm.getDataSource mf)
-            -< treeSelected `mappend` collapse frameLoad
+            -< treeSelected
+    fire $ DataModel.selDS model -< newDs
 
-    wrSwitch0 -< ((world, ()), fetch <$> newDs)
+    -- Status pane
+    ds <- DataModel.onSelDS model -< world
+    wrSwitch0 -< (world, fetch <$> ds)
 
+    -- Post Box
     tootClick <-
         onClicked $ mf ^. MainForm.postButton
             -< world
-    wrSwitch0 -< ((world, ()), toot <$ tootClick)
+    wrSwitch0 -< (world, toot <$ tootClick)
 
+    -- Termination
     del <-
         mf ^. MainForm.win `on` deleteEvent `Replying` False
             -< world
     construct (await >> stop) -< del
   where
     fetch = fetchPublicTimeline (mf ^. MainForm.statusView)
-    toot = proc (world, _) ->
+    toot = proc world ->
       do
         fire0 (postToot $ mf ^. MainForm.postBox) <<< onActivation -< world
 
 fetchPublicTimeline ::
     WebView ->
     BasicModel.DataSource ->
-    ProcessT IO (TheWorld, ()) (Event Void)
-fetchPublicTimeline wv ds0 = proc (world, ()) ->
+    ProcessT IO TheWorld (Event Void)
+fetchPublicTimeline wv ds0 = proc world ->
   do
     fire0 (clearWebView wv) <<< onActivation -< world
     sts <- Async.runResource (Async.PollIdle priorityDefaultIdle) fetchThread -< world

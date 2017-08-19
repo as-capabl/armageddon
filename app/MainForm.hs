@@ -13,6 +13,7 @@ import Prelude hiding ((.), id)
 
 import Data.Void
 import Data.Tree
+import Data.Maybe (isNothing)
 import Control.Category
 import Control.Arrow
 import Control.Lens hiding (set)
@@ -225,7 +226,18 @@ setupTootPane html =
 addRegistration :: T -> Registration -> IO ()
 addRegistration this reg =
   do
+    bNeedSelect <- isNothing <$> treeStoreLookup (this ^. instModel) [0]
+
+    -- Update status pane
     treeStoreInsertTree (this ^. instModel) [] 0 (makeDsiTree reg)
+
+    if bNeedSelect
+      then do
+        postGUIAsync $ treeSelectionSelectPath (this ^. instSel) [0]
+      else
+        return ()
+
+    -- Update toot pane
     listStoreAppend (this ^. postDst) reg
     return ()
 

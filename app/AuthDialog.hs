@@ -10,6 +10,7 @@ where
 import Prelude hiding ((.), id)
 import Control.Category
 import Control.Arrow
+import Control.Lens
 import Data.Void
 import Data.Tree
 import Control.Monad.Trans
@@ -37,7 +38,9 @@ authPasswd host clientId clientSecret =
     maybe (return Nothing) `flip` mauth $ \(user, pass) ->
       do
         mcli <- Hdon.mkHastodonClient clientId clientSecret user pass host
-        let mreg = Registration <$> mcli <*> pure (Text.pack user)
+        let makeReg cli =
+                Registration "" "" (Text.pack user) & hastodonClient .~ cli
+            mreg = makeReg <$> mcli
         maybe (authPasswd host clientId clientSecret) (return . Just) mreg
 
   where

@@ -8,7 +8,7 @@ Build requirements are below.
     -libgtk
 - Build tool
     - [stack](https://docs.haskellstack.org/en/stable/README/)
-    - gtk2hs-buildtool -- run `stack install gtk2hs-buildtool` command to install the program in your local stack environment.
+    - gtk2hs-buildtools -- run `stack install gtk2hs-buildtools` command to install the program in your local stack environment.
 
 Install requirements and execute `stack build`.
 

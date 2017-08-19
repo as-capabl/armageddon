@@ -1,14 +1,13 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveGeneric #-}
+
 module
-    DB
+    DB.Types
 where
 
-import Control.Lens
+import DB.Init
 
 
-
--- $(makeRecordPersistableDefault ''Registration)
-
-
+$(defineTable "~/.armageddon/auth.sqlite3" "registration")

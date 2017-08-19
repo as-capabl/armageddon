@@ -23,6 +23,8 @@ module
         onActivation,
         onInactivation,
 
+        HasWorld(),
+
         wkSwitch,
         wSwitch,
         wrSwitch,
@@ -36,6 +38,7 @@ module
         wAccum,
 
         MessageBox (),
+        messageBoxNew,
         postMessage,
         onMessage
       )
@@ -121,14 +124,15 @@ data Any
 nothingAny :: Any
 nothingAny = unsafeCoerce ()
 
-type MainState instr m = (EventID, Any) -> instr (StM m ())
+type MainStateProc instr m = (EventID, Any) -> instr (StM m ())
+type Posted = [(EventID, Any)]
+type MainState instr m = Either Posted (Posted, MainStateProc instr m)
 
 data EventEnv wr m instr =
     EventEnv {
         envGetRootCount :: Ref (wr instr m) RootCount,
         envGetIDPool :: Ref (wr instr m) EventID,
-        envGetState :: Ref (wr instr m) (MainState instr m),
-        envGetPosted :: Ref (wr instr m) [(EventID, Any)]
+        envGetState :: Ref (wr instr m) (MainState instr m)
       }
 
 envGetRun :: EventEnv wr m instr -> Proxy (wr instr m)
@@ -159,6 +163,8 @@ listenID = proc (World _ etp, myID) ->
     go _ _ = Nothing
 
 -- Event listening
+
+{-# INLINE listen #-}
 listen ::
     (WorldRunner instr m (wr instr m), Monad m, Monad instr) =>
     ((a -> instr ()) -> m h) ->
@@ -189,12 +195,17 @@ handleProc ::
     EventID ->
     Any ->
     instr ()
-handleProc env@(EventEnv _ _ vSt _) eid arg =
+handleProc env@(EventEnv _ _ vSt) eid arg =
   do
-    st <- refGet (envGetRun env) vSt
-    st (eid, arg)
+    eSt <- refGet (envGetRun env) vSt
+    case eSt
+      of
+        Left l -> error "World.hs: handler is busy"
+        Right (l, st) ->
+          do
+            refSet (envGetRun env) vSt (Left l)
+            st (eid, arg)
     return ()
-
 
 -- |Fires once on initialization.
 onActivation ::
@@ -204,6 +215,7 @@ onActivation = proc world ->
   do
     ea <- listenID -< (world, actID)
     returnA -< () <$ ea
+{-# INLINE onActivation #-}
 
 -- |Fires once on initialization.
 onInactivation ::
@@ -213,6 +225,8 @@ onInactivation = proc world ->
   do
     ea <- listenID -< (world, inactID)
     returnA -< () <$ ea
+{-# INLINE onInactivation #-}
+
 
 --
 -- Run sf
@@ -242,14 +256,12 @@ startWithRoot vRt fin sf0 =
 
     let px = Proxy :: Proxy (wr instr m)
     vID <- newRefA px (inclID inactID)
-    vSt <- newRefA px initSt
-    vPs <- newRefA px []
+    vSt <- newRefA px (Left [])
 
     let env = EventEnv {
             envGetRootCount = vRt,
             envGetIDPool = vID,
-            envGetState = vSt,
-            envGetPosted = vPs
+            envGetState = vSt
           }
 
     recurseOnEnv fin env (proc etp -> sf0 -< World env etp) (actID, nothingAny)
@@ -281,7 +293,7 @@ recurseOnEnv fin env p0 etp0 =
       do
         p' <- runBody p0 [etp0]
         st <- lift $ embed (recurseOnEnv fin env p')
-        lift $ refSetA refrun (envGetState env) st
+        lift $ refSetA refrun (envGetState env) $ Right ([], st)
     runBody p1 etps =
       do
         p' <- execStateT `flip` p1 $ forM_ etps $ \etp ->
@@ -294,9 +306,10 @@ recurseOnEnv fin env p0 etp0 =
                     (\_ -> lift $ MaybeT $ return Nothing)
                     p etp
             put p'
-        next <- lift $ modifyRef'A refrun (envGetPosted env) $ \case
-            [] -> ([], return p')
-            l -> ([], runBody p' $ reverse l)
+        next <- lift $ modifyRef'A refrun (envGetState env) $ \case
+            Left [] -> (Left [], return p')
+            Left l -> (Left [], runBody p' $ reverse l)
+            Right _ -> error "Internal error at World.hs l302"
         next
     runFin =
       do
@@ -327,25 +340,25 @@ forkWorld pa = P.evolve go >>> pure ()
 -- World switch
 --
 class
-    HasWorld w instr m wr | w -> instr, w -> m, w -> wr
+    HasWorld instr m wr a | a -> instr, a -> m, a -> wr
   where
-    getWorld :: w -> World instr m wr
-    modWorld :: (World instr m wr -> World instr m wr) -> w -> w
+    getWorld :: a -> World instr m wr
+    modWorld :: (World instr m wr -> World instr m wr) -> a -> a
 
 instance
-    HasWorld (World instr m wr) instr m wr
+    HasWorld instr m wr (World instr m wr)
   where
     getWorld = id
     modWorld = id
 
 instance
-    HasWorld (World instr m wr, a) instr m wr
+    HasWorld instr m wr (World instr m wr, a)
   where
     getWorld = fst
     modWorld = first
 
 prefeeder ::
-    (WorldRunner instr m (wr instr m), HasWorld w instr m wr, Monad m) =>
+    (WorldRunner instr m (wr instr m), HasWorld instr m wr w, Monad m) =>
     EventID ->
     P.ProcessT m w (w, P.Event ())
 prefeeder eid = proc world ->
@@ -358,8 +371,9 @@ prefeeder eid = proc world ->
 
     returnA -< (input, trigger)
 
+{-# INLINE wkSwitch #-}
 wkSwitch ::
-    (WorldRunner instr m (wr instr m), HasWorld w instr m wr, Monad m) =>
+    (WorldRunner instr m (wr instr m), HasWorld instr m wr w, Monad m) =>
     P.ProcessT m w c ->
     P.ProcessT m (w, c) (P.Event t) ->
     (P.ProcessT m w c -> t -> P.ProcessT m w c) ->
@@ -371,8 +385,9 @@ wkSwitch sf test k = P.evolve $
     (sf''', _) <- P.gSwitchAfter (prefeeder actID) id $ k sf'' t
     P.finishWith sf'''
 
+{-# INLINE wSwitch #-}
 wSwitch ::
-    (WorldRunner instr m (wr instr m), HasWorld w instr m wr, Monad m) =>
+    (WorldRunner instr m (wr instr m), HasWorld instr m wr w, Monad m) =>
     P.ProcessT m w (c, P.Event t) ->
     (t -> P.ProcessT m w c) ->
     P.ProcessT m w c
@@ -384,8 +399,9 @@ wSwitch sf k = P.evolve $
     P.finishWith sf'''
 
 
+{-# INLINE wrSwitch #-}
 wrSwitch ::
-    (WorldRunner instr m (wr instr m), HasWorld w instr m wr, Monad m) =>
+    (WorldRunner instr m (wr instr m), HasWorld instr m wr w, Monad m) =>
     P.ProcessT m w c ->
     P.ProcessT m (w, P.Event (P.ProcessT m w c)) c
 wrSwitch sf = P.evolve $
@@ -395,26 +411,30 @@ wrSwitch sf = P.evolve $
     (nx', _) <- P.gSwitchAfter (arr fst >>> prefeeder actID) id nx
     P.finishWith $ wrSwitch nx'
 
+{-# INLINE wrSwitch0 #-}
 wrSwitch0 ::
-    (WorldRunner instr m (wr instr m), HasWorld w instr m wr, Monad m, P.Occasional c) =>
+    (WorldRunner instr m (wr instr m), HasWorld instr m wr w, Monad m, P.Occasional c) =>
     P.ProcessT m (w, P.Event (P.ProcessT m w c)) c
 wrSwitch0 = wrSwitch (P.muted . arr getWorld)
 
+{-# INLINE wSwitchAfter #-}
 wSwitchAfter ::
-    (WorldRunner instr m (wr instr m), HasWorld w instr m wr, Monad m) =>
+    (WorldRunner instr m (wr instr m), HasWorld instr m wr w, Monad m) =>
     P.ProcessT m w (c, P.Event r) ->
     P.Evolution w c m r
 wSwitchAfter sf = P.Evolution $ cont $ wSwitch sf
 
+{-# INLINE wkSwitchAfter #-}
 wkSwitchAfter ::
-    (WorldRunner instr m (wr instr m), HasWorld w instr m wr, Monad m) =>
+    (WorldRunner instr m (wr instr m), HasWorld instr m wr w, Monad m) =>
     P.ProcessT m (w, c) (P.Event r) ->
     P.ProcessT m w c ->
     P.Evolution w c m (P.ProcessT m w c, r)
 wkSwitchAfter test sf = P.Evolution $ cont $ wkSwitch sf test . curry
 
+{-# INLINE wFinishWith #-}
 wFinishWith ::
-    (WorldRunner instr m (wr instr m), HasWorld w instr m wr, Monad m) =>
+    (WorldRunner instr m (wr instr m), HasWorld instr m wr w, Monad m) =>
     P.ProcessT m w c ->
     P.Evolution w c m r
 wFinishWith sf = P.Evolution $ cont $ \_ -> P.evolve $
@@ -461,12 +481,13 @@ wAccum x = proc (world, ev) ->
 data MessageBox (instr :: * -> *) (m :: * -> *) wr a = MessageBox
   {
     mbGetID :: EventID,
-    mbGetRef :: Ref (wr instr m) [(EventID, Any)]
+    mbGetRef :: Ref (wr instr m) (MainState instr m)
   }
 
 
+{-# INLINE messageBoxNew #-}
 messageBoxNew ::
-    (WorldRunner instr m (wr instr m), HasWorld i instr m wr, Monad m, P.Occasional o) =>
+    (WorldRunner instr m (wr instr m), HasWorld instr m wr i, Monad m, P.Occasional o) =>
     P.Evolution i o m (MessageBox instr m wr a)
 messageBoxNew =
   do
@@ -477,17 +498,29 @@ messageBoxNew =
         mut <- P.muted -< world
         returnA -< (mut, worldGetEnv world <$ act)
     evtId <- lift $ newID env
-    return $ MessageBox evtId (envGetPosted env)
+    return $ MessageBox evtId (envGetState env)
 
+{-# INLINE postMessage #-}
 postMessage ::
     forall instr m wr a.
     (WorldRunner instr m (wr instr m), Monad m) =>
-    MessageBox instr m wr a -> a -> m ()
+    MessageBox instr m wr a -> a -> instr ()
 postMessage mb x =
   do
-    modifyRef'A (Proxy :: Proxy (wr instr m)) (mbGetRef mb) (\l -> (unsafeCoerce x : l, ()))
-    -- TODO Force run
+    let rr = Proxy :: Proxy (wr instr m)
+        etp = (mbGetID mb, unsafeCoerce x)
+        vSt = mbGetRef mb
+    eSt <- refGet rr vSt
+    case eSt
+      of
+        Left l -> refSet rr vSt $ Left (etp : l)
+        Right (l, st) ->
+          do
+            refSet rr vSt $ Left l
+            st etp
+            return ()
 
+{-# INLINE onMessage #-}
 onMessage ::
     (WorldRunner instr m (wr instr m), Monad m) =>
     MessageBox instr m wr a ->

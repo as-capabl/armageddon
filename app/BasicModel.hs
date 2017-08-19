@@ -6,6 +6,7 @@ module
 where
 
 import Prelude hiding ((.), id)
+import Control.Category
 
 import Control.Lens
 import qualified Data.Text as Text
@@ -24,24 +25,26 @@ makeClassyFor
 
 data Registration = Registration
   {
-    _rgcli :: Hdon.HastodonClient,
-    _registrationUser :: BMText
+    _registrationHost :: BMText,
+    _registrationUser :: BMText,
+    _registrationToken :: BMText
   }
+    deriving (Eq, Show)
 
 makeClassy ''Registration
-instance HasHastodonClient Registration where {hastodonClient = rgcli}
-
 instance
-    Eq Registration
+    HasHastodonClient Registration
   where
-    x == y =
-        x ^. host == y ^. host &&
-        x ^. registrationUser == y ^. registrationUser
-
-instance
-    Show Registration
-  where
-    show x = "Registration " ++ show (x ^. host) ++ " " ++ show (x ^. registrationUser)
+    hastodonClient = lens getter setter
+      where
+        getter reg = Hdon.HastodonClient {
+            Hdon.host = Text.unpack $ _registrationHost reg,
+            Hdon.token = Text.unpack $ _registrationToken reg
+          }
+        setter reg cli = reg {
+            _registrationHost = Text.pack $ Hdon.host cli,
+            _registrationToken = Text.pack $ Hdon.token cli
+          }
 
 
 data DataSource = DataSource
@@ -53,5 +56,5 @@ data DataSource = DataSource
 
 makeClassy ''DataSource
 instance HasRegistration DataSource where {registration = dsreg}
-instance HasHastodonClient DataSource where {hastodonClient = rgcli}
+instance HasHastodonClient DataSource where {hastodonClient = dsreg . hastodonClient}
 

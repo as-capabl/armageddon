@@ -49,26 +49,50 @@ runResource ::
     ProcessT IO TheWorld (Event a)
 runResource = run' (forkIO . runResourceT)
 
-run' runner poll body = evolve $
-  do
-    wSwitchAfter (muted &&& onActivation)
+run' runner poller body = proc world ->
+    wSwitch (muted *** (pure noEvent >>> ignite)) (\arg -> arr fst >>> listenIt arg)
+        -< (world, world)
+  where
+    ignite = constructT $
+      do
+        (inC, outC) <- lift $ Unagi.newChan
+        threadId <- lift $ runner $ runT (liftIO . Unagi.writeChan inC) body (repeat ())
+        yield (outC, threadId)
 
-    (inC, outC) <- lift $ Unagi.newChan
-    threadId <- lift $ runner $
-        runT (liftIO . Unagi.writeChan inC) body (repeat ())
-
-    wFinishWith $ proc world ->
+    listenIt (outC, threadId) = proc world ->
       do
         idle <- listen
-            (\h -> pollStart poll  (do {b <- Unagi.isActive outC; h b; return b}))
-            (\sigId -> pollEnd poll sigId >> killThread threadId)
+            (\h -> pollStart poller (do {b <- Unagi.isActive outC; h b; return b}))
+            (\sigId -> killThread threadId >> pollEnd poller sigId)
                 -< world
-        consume outC -< idle
+        constructT $ consume outC -< idle
 
+
+consume outC =
+  do
+    el <- lift $ Unagi.tryReadChan outC
+    consumeEl outC el
+  where
+    consumeEl outC el =
+      do
+        mx <- lift $ Unagi.tryRead el
+        el' <- case mx
+          of
+            Just x ->
+              do
+                yield x
+                lift $ Unagi.tryReadChan outC
+            Nothing ->
+              do
+                b <- await
+                if not b then stop else return el
+        consumeEl outC el'
+
+{-
 consume ::
     MonadIO m =>
     Unagi.OutChan a -> ProcessT m (Event Bool) (Event a)
-consume outC = constructT $
+consume outC = evolve $
   do
     el0 <- liftIO $ Unagi.tryReadChan outC
     evalStateT `flip` el0 $ forever $
@@ -86,5 +110,7 @@ consume outC = constructT $
               do
                 b <- lift await
                 lift $ if b then return () else stop
+-}
+
 
 
