@@ -15,7 +15,7 @@ import Language.Haskell.TH (Q, Dec, runIO)
 import System.FilePath
 import System.Directory
 
-import BasicModel
+import BasicModel (BMText)
 
 defineTable :: FilePath -> String -> Q [Dec]
 defineTable fileName tableName =
@@ -23,10 +23,17 @@ defineTable fileName tableName =
     conn <- runIO $ prepareAuth
     defineTableFromDB
         (return conn)
-        (driverSQLite3 { typeMap = [("FLOAT", [t|Double|]), ("INTEGER", [t|Int|]), ("Text", [t|BMText|])] }) -- overwrite the default type map with yours
+        (driverSQLite3 { typeMap = myTypeMap })
         "main" -- schema name, ignored by SQLite
         tableName
         [''Show, ''Generic]
+  where
+    myTypeMap =
+      [
+        ("float", [t|Double|]),
+        ("integer", [t|Int|]),
+        ("text", [t|BMText|])
+      ]
 
 prepareAuth =
   do
@@ -43,9 +50,10 @@ prepareAuth =
 createAuth authFile =
   do
     conn <- connectSqlite3 authFile
-    runRaw conn "CREATE TABLE basic(defaultClientName text)"
-    runRaw conn "CREATE TABLE host(hostName text, clientId text, clientSecret text);"
-    runRaw conn "CREATE TABLE registration(regHostName text, username text, token text);"
+    runRaw conn "CREATE TABLE file(fileVersion integer, fileKind text)"
+    runRaw conn "CREATE TABLE config(configDefaultClientName text)"
+    runRaw conn "CREATE TABLE host(hostName text, hostClientId text, hostClientSecret text);"
+    runRaw conn "CREATE TABLE registration(registrationHost text, registrationToken text, registrationUser text);"
     commit conn
     return conn
 

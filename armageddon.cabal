@@ -31,6 +31,7 @@ executable armageddon
                      , monad-control
                      , resourcet
                      , conduit
+                     , conduit-extra
                      , machinecell >= 4 && < 5
                      , machinecell-extra
 

@@ -32,6 +32,34 @@ import qualified Web.Hastodon as Hdon
 
 import BasicModel
 
+getHostname =
+  do
+    dialog <- dialogNew
+
+    labelHost <- labelNew (Just "Host URL" :: Maybe Text.Text)
+    entryHost <- entryNew
+    labelApp <- labelNew (Just "App name (to display)" :: Maybe Text.Text)
+    entryApp <- entryNew
+    entrySetText entryApp ("YourName@armageddon" :: Text.Text)
+
+    vbox <- dialogGetUpper dialog
+    vbox `containerAdd` labelHost
+    vbox `containerAdd` entryHost
+    vbox `containerAdd` labelApp
+    vbox `containerAdd` entryApp
+
+    dialogAddButton dialog ("OK" :: Text.Text) ResponseOk
+    dialogAddButton dialog ("Cancel" :: Text.Text) ResponseCancel
+
+    widgetShowAll dialog
+    stat <- dialogRun dialog
+    strHost <- entryGetText entryHost :: IO String
+    strApp <- entryGetText entryApp :: IO String
+    widgetDestroy dialog
+
+    return $ if stat == ResponseOk then Just (strHost, strApp) else Nothing
+
+
 authPasswd host clientId clientSecret =
   do
     mauth <- showPassDlg

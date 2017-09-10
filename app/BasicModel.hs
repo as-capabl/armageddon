@@ -15,7 +15,6 @@ import qualified Web.Hastodon as Hdon
 
 type BMText = Text.Text
 
-data DSKind = DSHome | DSPublic | DSNotification | DSUserStatus BMText deriving (Eq, Show)
 
 makeClassyFor
     "HasHastodonClient"
@@ -23,11 +22,31 @@ makeClassyFor
     [("host", "host"), ("token", "token")]
     ''Hdon.HastodonClient
 
+-- Config
+data Config = Config
+  {
+    _defaultClientName :: BMText
+  }
+
+makeLenses ''Config
+
+-- Host
+data Host = Host
+  {
+    _hostname :: BMText,
+    _clientId :: BMText,
+    _clientSecret :: BMText
+  }
+    deriving (Eq, Show)
+
+makeLenses ''Host
+
+-- Registration
 data Registration = Registration
   {
     _registrationHost :: BMText,
-    _registrationUser :: BMText,
-    _registrationToken :: BMText
+    _registrationToken :: BMText,
+    _username :: BMText
   }
     deriving (Eq, Show)
 
@@ -46,6 +65,8 @@ instance
             _registrationToken = Text.pack $ Hdon.token cli
           }
 
+-- Data Source
+data DSKind = DSHome | DSPublic | DSNotification | DSUserStatus BMText deriving (Eq, Show)
 
 data DataSource = DataSource
   {

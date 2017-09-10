@@ -37,10 +37,10 @@ module
         wHold,
         wAccum,
 
-        MessageBox (),
-        messageBoxNew,
-        postMessage,
-        onMessage
+        Mailbox (),
+        mailboxNew,
+        mailboxPost,
+        onMailboxPost
       )
 where
 
@@ -478,18 +478,18 @@ wAccum x = proc (world, ev) ->
 --
 -- Message box
 --
-data MessageBox (instr :: * -> *) (m :: * -> *) wr a = MessageBox
+data Mailbox (instr :: * -> *) (m :: * -> *) wr a = Mailbox
   {
     mbGetID :: EventID,
     mbGetRef :: Ref (wr instr m) (MainState instr m)
   }
 
 
-{-# INLINE messageBoxNew #-}
-messageBoxNew ::
+{-# INLINE mailboxNew #-}
+mailboxNew ::
     (WorldRunner instr m (wr instr m), HasWorld instr m wr i, Monad m, P.Occasional o) =>
-    P.Evolution i o m (MessageBox instr m wr a)
-messageBoxNew =
+    P.Evolution i o m (Mailbox instr m wr a)
+mailboxNew =
   do
     env <- wSwitchAfter $ proc x ->
       do
@@ -498,14 +498,14 @@ messageBoxNew =
         mut <- P.muted -< world
         returnA -< (mut, worldGetEnv world <$ act)
     evtId <- lift $ newID env
-    return $ MessageBox evtId (envGetState env)
+    return $ Mailbox evtId (envGetState env)
 
-{-# INLINE postMessage #-}
-postMessage ::
+{-# INLINE mailboxPost #-}
+mailboxPost ::
     forall instr m wr a.
     (WorldRunner instr m (wr instr m), Monad m) =>
-    MessageBox instr m wr a -> a -> instr ()
-postMessage mb x =
+    Mailbox instr m wr a -> a -> instr ()
+mailboxPost mb x =
   do
     let rr = Proxy :: Proxy (wr instr m)
         etp = (mbGetID mb, unsafeCoerce x)
@@ -520,11 +520,11 @@ postMessage mb x =
             st etp
             return ()
 
-{-# INLINE onMessage #-}
-onMessage ::
+{-# INLINE onMailboxPost #-}
+onMailboxPost ::
     (WorldRunner instr m (wr instr m), Monad m) =>
-    MessageBox instr m wr a ->
+    Mailbox instr m wr a ->
     P.ProcessT m (World instr m wr) (P.Event a)
-onMessage mb = proc world ->
+onMailboxPost mb = proc world ->
   do
     P.evMap unsafeCoerce <<< listenID -< (world, mbGetID mb)

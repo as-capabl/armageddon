@@ -34,6 +34,7 @@ import qualified Graphics.UI.Gtk.WebKit.DOM.CSSStyleDeclaration as DOM
 
 import qualified Data.Conduit as C
 import qualified Data.Conduit.List as C
+import qualified Data.Conduit.Attoparsec as CA
 
 import Control.Arrow.Machine
 import Graphics.UI.McGtk
@@ -72,21 +73,19 @@ authNew :: DataModel.T -> ProcessT IO (TheWorld, Event ()) (Event Void)
 authNew model = evolve $ forever $
   do
     wSwitchAfter $ muted *** id
-    liftIO $ postGUIAsync $
-      do
-        mreg <- showDlg
-        case mreg
-          of
-            Just reg -> liftIO $ DataModel.addRegistration model reg
-            Nothing -> return ()
-  where
-    showDlg =
-      do
-        AuthDialog.authPasswd
-            "pawoo.net"
-            "8013afc7a192c032c6b68dd965116e27a0d614e44c8c252707f23b2596ce8808"
-            "3553df5b2d86e69aab6c047c3df60ab853333968a73f1de1ac949460d2946505"
+    liftIO $ postGUIAsync $ runMaybeT doAuth >> return ()
 
+  where
+    doAuth =
+      do
+        (hostname, appname) <- MaybeT AuthDialog.getHostname
+
+        hst <- MaybeT $ DataModel.getClientInfo hostname appname
+        let cid = Text.unpack $ hst ^. clientId
+            csecret = Text.unpack $ hst ^. clientSecret
+
+        reg <- MaybeT $ AuthDialog.authPasswd hostname cid csecret
+        liftIO $ DataModel.addRegistration model reg
 
 
 driveMainForm :: DataModel.T -> MainForm.T -> ProcessT IO TheWorld (Event Void)
@@ -147,21 +146,20 @@ fetchPublicTimeline wv ds0 = proc world ->
       do
         Right sts <- liftIO $ initialReadDs ds0
         mapM_ yield $ reverse sts
-        auto $ sourceReadDs ds0 C.=$= filterLeftC C.=$= filterUpdateC
+        auto $ (C.catchC (sourceReadDs ds0) (liftIO . printEx)) C.=$= filterUpdateC
 
     initialReadDs ds@(DataSource _ DSHome) = Hdon.getHomeTimeline (ds ^. hastodonClient)
     initialReadDs ds = Hdon.getPublicTimeline (ds ^. hastodonClient)
 
-    sourceReadDs ds@(DataSource cli DSHome) = Hdon.sourceUserTimeline (ds ^. hastodonClient)
+    sourceReadDs ds@(DataSource _ DSHome) = Hdon.sourceUserTimeline (ds ^. hastodonClient)
     sourceReadDs ds = Hdon.sourcePublicTimeline (ds ^. hastodonClient)
-
-    filterLeftC = C.awaitForever $ \case
-        Left err -> trace ("No Parse: " ++ err) $ return ()
-        Right x -> C.yield x
 
     filterUpdateC = C.awaitForever $ \case
         Hdon.StreamUpdate x -> C.yield x
         _ -> return ()
+
+    printEx :: CA.ParseError -> IO ()
+    printEx = print
 
 
 clearWebView wv = runMaybeT go >> return ()
