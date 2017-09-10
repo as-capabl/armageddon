@@ -5,27 +5,26 @@ GUI mastodon client written in Haskell
 Build requirements are below.
 
 - External library
-    -libgtk
+    - libgtk
+    - sqlite3
 - Build tool
     - [stack](https://docs.haskellstack.org/en/stable/README/)
     - gtk2hs-buildtools -- run `stack install gtk2hs-buildtools` command to install the program in your local stack environment.
 
 Install requirements and execute `stack build`.
 
-The gtk2hs build chain has trouble with nonstandard locale.
+Note that the gtk2hs build chain has trouble with nonstandard locale.
 
 If you get an error while building gtk, `LANG=C stack build` will help you.
 
 ## Current status
 Experimental.
 
-Only the host http://pawoo.net is supprted.
-
-- [ ] Authentication to arbitrary host
-- [ ] Save credentials
+- [X] Authentication to arbitrary host
+- [X] Save credentials
 - [ ] Fetch notification
 - [ ] Show user profile
 - [ ] Show icons
 - [ ] Toot cache
-- and so on ...
+- and more ...
 
