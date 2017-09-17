@@ -205,7 +205,11 @@ setupTootPane html =
   do
     webView <- webViewNew
     webSettings <- webSettingsNew
-    set webSettings [webSettingsEnableScripts := False]
+    set webSettings
+      [
+        webSettingsEnableScripts := False,
+        webSettingsEnablePageCache := True
+      ]
     webViewSetWebSettings webView webSettings
 
     scrollWin <- scrolledWindowNew Nothing Nothing

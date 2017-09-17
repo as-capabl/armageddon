@@ -32,15 +32,10 @@ import qualified Graphics.UI.Gtk.WebKit.DOM.Element as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.Node as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.CSSStyleDeclaration as DOM
 
-import qualified Data.Conduit as C
-import qualified Data.Conduit.List as C
-import qualified Data.Conduit.Attoparsec as CA
-
 import Control.Arrow.Machine
 import Graphics.UI.McGtk
 import Control.Arrow.Machine.World
 import Control.Arrow.Machine.IORefRunner
-import Control.Arrow.Machine.ConduitAdaptor
 
 import qualified Web.Hastodon as Hdon
 
@@ -139,28 +134,11 @@ fetchPublicTimeline ::
 fetchPublicTimeline wv ds0 = proc world ->
   do
     fire0 (clearWebView wv) <<< onActivation -< world
-    sts <- Async.runResource (Async.PollIdle priorityDefaultIdle) fetchThread -< world
+    sts <- Async.runResource
+        (Async.PollIdle priorityDefaultIdle)
+        (DataModel.readDS ds0)
+            -< world
     muted <<< fire (prependStatus wv) -< sts
-  where
-    fetchThread = constructT $
-      do
-        Right sts <- liftIO $ initialReadDs ds0
-        mapM_ yield $ reverse sts
-        auto $ (C.catchC (sourceReadDs ds0) (liftIO . printEx)) C.=$= filterUpdateC
-
-    initialReadDs ds@(DataSource _ DSHome) = Hdon.getHomeTimeline (ds ^. hastodonClient)
-    initialReadDs ds = Hdon.getPublicTimeline (ds ^. hastodonClient)
-
-    sourceReadDs ds@(DataSource _ DSHome) = Hdon.sourceUserTimeline (ds ^. hastodonClient)
-    sourceReadDs ds = Hdon.sourcePublicTimeline (ds ^. hastodonClient)
-
-    filterUpdateC = C.awaitForever $ \case
-        Hdon.StreamUpdate x -> C.yield x
-        _ -> return ()
-
-    printEx :: CA.ParseError -> IO ()
-    printEx = print
-
 
 clearWebView wv = runMaybeT go >> return ()
   where

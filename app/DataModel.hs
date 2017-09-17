@@ -4,6 +4,7 @@
 {-# LANGUAGE Strict, StrictData #-}
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE LambdaCase #-}
 
 -- Global event
 module
@@ -24,9 +25,14 @@ import qualified Control.Monad.Trans.Resource as R
 import Control.Arrow.Machine
 import Control.Arrow.Machine.World
 import Control.Arrow.Machine.IORefRunner
+import Control.Arrow.Machine.ConduitAdaptor
 
 import qualified Data.Text as Text
 import Data.Maybe (listToMaybe)
+
+import qualified Data.Conduit as C
+import qualified Data.Conduit.List as C
+import qualified Data.Conduit.Attoparsec as CA
 
 import Database.Relational.Query
 import Database.HDBC (commit, disconnect)
@@ -194,3 +200,24 @@ onSelDS :: T -> ProcessT IO TheWorld (Event DataSource)
 onSelDS model = proc world ->
   do
     onMailboxPost $ model ^. selDSMBox -< world
+
+readDS :: DataSource -> ProcessT (R.ResourceT IO) (Event ()) (Event Hdon.Status)
+readDS ds0 = constructT $
+  do
+    Right sts <- liftIO $ initialReadDs ds0
+    mapM_ yield $ reverse sts
+    auto $ (C.catchC (sourceReadDs ds0) (liftIO . printEx)) C.=$= filterUpdateC
+  where
+    initialReadDs ds@(DataSource _ DSHome) = Hdon.getHomeTimeline (ds ^. hastodonClient)
+    initialReadDs ds = Hdon.getPublicTimeline (ds ^. hastodonClient)
+
+    sourceReadDs ds@(DataSource _ DSHome) = Hdon.sourceUserTimeline (ds ^. hastodonClient)
+    sourceReadDs ds = Hdon.sourcePublicTimeline (ds ^. hastodonClient)
+
+    filterUpdateC = C.awaitForever $ \case
+        Hdon.StreamUpdate x -> C.yield x
+        _ -> return ()
+
+    printEx :: CA.ParseError -> IO ()
+    printEx = print
+
