@@ -24,7 +24,10 @@ Experimental.
 - [X] Save credentials
 - [ ] Fetch notification
 - [ ] Show user profile
-- [ ] Show icons
-- [ ] Toot cache
+- [X] Show icons
+- [ ] Cache timelines
+- [ ] Control timeline flow
+    - [ ] Show "read more"
+    - [ ] Stop fetching toots unless the scroll position is on top
 - and more ...
 
