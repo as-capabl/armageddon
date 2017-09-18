@@ -31,11 +31,13 @@ import qualified Control.Concurrent.Chan.Unagi.NoBlocking as Unagi
 type TheWorld = World IO IO IORefRunner
 
 
-data PollStrategy = PollIdle Priority
+data PollStrategy = PollIdle Priority | PollTimeout Priority Int
 
 pollStart (PollIdle priority) f = idleAdd f priority
+pollStart (PollTimeout priority time) f = timeoutAddFull f priority time
 
 pollEnd (PollIdle _) = idleRemove
+pollEnd (PollTimeout _ _) = timeoutRemove
 
 run ::
     PollStrategy ->

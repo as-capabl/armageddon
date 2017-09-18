@@ -135,7 +135,7 @@ fetchPublicTimeline wv ds0 = proc world ->
   do
     fire0 (clearWebView wv) <<< onActivation -< world
     sts <- Async.runResource
-        (Async.PollIdle priorityDefaultIdle)
+        (Async.PollTimeout 100000 priorityDefaultIdle)
         (DataModel.readDS ds0)
             -< world
     muted <<< fire (prependStatus wv) -< sts
