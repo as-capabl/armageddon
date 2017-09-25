@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE Strict, StrictData #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module
     BasicModel
@@ -10,6 +11,8 @@ import Control.Category
 
 import Control.Lens
 import qualified Data.Text as Text
+import GHC.Generics (Generic)
+import Data.Hashable (Hashable)
 
 import qualified Web.Hastodon as Hdon
 
@@ -48,7 +51,7 @@ data Registration = Registration
     _registrationToken :: BMText,
     _username :: BMText
   }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic)
 
 makeClassy ''Registration
 instance
@@ -64,6 +67,8 @@ instance
             _registrationHost = Text.pack $ Hdon.host cli,
             _registrationToken = Text.pack $ Hdon.token cli
           }
+
+instance Hashable Registration
 
 -- Data Source
 data DSKind = DSHome | DSPublic | DSNotification | DSUserStatus BMText deriving (Eq, Show)

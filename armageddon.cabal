@@ -24,6 +24,8 @@ executable armageddon
                      , transformers
                      , text
                      , containers
+                     , hashable
+                     , hashmap
                      , lens
                      , unagi-chan
 

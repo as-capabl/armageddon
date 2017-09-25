@@ -75,6 +75,7 @@ class
     newRef :: proxy t -> a -> instr (Ref t a)
     refGet :: proxy t -> Ref t a -> instr a
     refSet :: proxy t -> Ref t a -> a -> instr ()
+    refAtomicModify :: proxy t -> Ref t a -> (a -> (a, b)) -> instr b
 
 newRefA ::
     (WorldRunner instr m t, Monad instr, Monad m) =>
@@ -306,14 +307,14 @@ recurseOnEnv fin env p0 etp0 =
                     (\_ -> lift $ MaybeT $ return Nothing)
                     p etp
             put p'
-        next <- lift $ modifyRef'A refrun (envGetState env) $ \case
+        next <- lift $ liftBase $ refAtomicModify refrun (envGetState env) $ \case
             Left [] -> (Left [], return p')
             Left l -> (Left [], runBody p' $ reverse l)
             Right _ -> error "Internal error at World.hs l302"
         next
     runFin =
       do
-        cnt' <- modifyRef'A refrun (envGetRootCount env) (\cnt -> (cnt-1, cnt-1))
+        cnt' <- liftBase $ refAtomicModify refrun (envGetRootCount env) (\(!cnt) -> (cnt-1, cnt-1))
         if cnt' <= 0 then fin else return ()
     refrun = envGetRun env
 

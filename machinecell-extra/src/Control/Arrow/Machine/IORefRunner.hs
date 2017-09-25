@@ -23,3 +23,4 @@ instance
     newRef _ = newIORef
     refGet _ = readIORef
     refSet _ = writeIORef
+    refAtomicModify _ = atomicModifyIORef

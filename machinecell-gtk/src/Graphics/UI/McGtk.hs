@@ -30,6 +30,7 @@ import Control.Arrow
 import Control.Monad.Trans (lift)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Reader (ask)
+import Control.Concurrent.MVar
 import Control.Monad.Trans.Control
 import Control.Monad.Base
 import qualified Control.Arrow.Machine as Mc
@@ -118,22 +119,20 @@ instance
 infixl 1 `Replying`
 
 
-data ReplyingV obj arg ret (mhnd :: * -> *) sig = ReplyingV sig ret
+data ReplyingV obj arg ret (mhnd :: * -> *) sig = ReplyingV sig
 
 instance
     (SignalSource obj arg ret mhnd sig, Monad mhnd, MonadIO mhnd) =>
-    SignalSource obj (IORef ret, arg) () mhnd
+    SignalSource obj (ret -> mhnd (), arg) () mhnd
         (ReplyingV obj arg ret mhnd sig)
   where
-    reg (ReplyingV sig ret) obj handler = reg sig obj handler'
+    reg (ReplyingV sig) obj handler = reg sig obj handler'
       where
         handler' x =
           do
-            v <- liftIO $ newIORef ret
-            handler (v, x)
-            liftIO $ readIORef v
-
-infixl 1 `ReplyingV`
+            v <- liftIO $ newEmptyMVar
+            handler (liftIO . putMVar v, x)
+            liftIO $ takeMVar v
 
 
 data Looking' obj arg ret (mhnd :: * -> *) val sig = Looking' sig (arg -> mhnd val)
