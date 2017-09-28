@@ -31,9 +31,14 @@ import qualified Graphics.UI.Gtk.WebKit.DOM.Document as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.Element as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.Node as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.CSSStyleDeclaration as DOM
+import qualified Graphics.UI.Gtk.WebKit.DOM.EventM as DOM
+import qualified Graphics.UI.Gtk.WebKit.DOM.Event as DOM
+import qualified Graphics.UI.Gtk.WebKit.DOM.MouseEvent as DOM
+import qualified Graphics.UI.Gtk.WebKit.WebView as DOM
 
 import Control.Arrow.Machine
 import Graphics.UI.McGtk
+import qualified Graphics.UI.McWebkit as McWeb
 import Control.Arrow.Machine.World
 import Control.Arrow.Machine.IORefRunner
 
@@ -110,6 +115,15 @@ driveMainForm model mf = proc world ->
     ds <- DataModel.onSelDS model -< world
     wrSwitch0 -< (world, fetch <$> ds)
 
+    ld <-
+        mf ^. MainForm.statusView `on` DOM.loadFinished
+            -< world
+    doc <-
+        filterJust
+        <<< fire0 (webViewGetDomDocument $ mf ^. MainForm.statusView)
+            -< collapse ld
+    wrSwitch0 -< (world, driveDocument <$> doc)
+
     -- Post Box
     tootClick <-
         onClicked $ mf ^. MainForm.postButton
@@ -126,6 +140,18 @@ driveMainForm model mf = proc world ->
     toot = proc world ->
       do
         fire0 (postToot $ mf ^. MainForm.postBox) <<< onActivation -< world
+
+driveDocument ::
+    DOM.Document -> ProcessT IO TheWorld (Event Void)
+driveDocument doc = proc world ->
+  do
+    cl <- McWeb.onSelector doc
+        (DOM.EventName "click" :: DOM.EventName DOM.Document DOM.MouseEvent)
+        ("div.hdon_username" :: BMText)
+        return
+            -< world
+    fire0 $ putStrLn "Hello!" -< collapse cl
+    muted -< world
 
 fetchPublicTimeline ::
     WebView ->
