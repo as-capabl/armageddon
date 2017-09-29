@@ -5,6 +5,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module
     Graphics.UI.McWebkit
@@ -83,11 +85,7 @@ onSelector self eventName selector fEvM =
   where
     filterAndGo handler = runMaybeT $
       do
-        tgt <- MaybeT $ DOM.eventTarget
-
-        -- Check and cast
-        guard $ tgt `Glib.isA` DOM.gTypeElement
-        let elem = DOM.castToElement tgt
+        Element elem <- MaybeT $ DOM.eventTarget
 
         -- Match test for selector
         bMatch <- lift $ DOM.webkitMatchesSelector elem selector
@@ -96,125 +94,7 @@ onSelector self eventName selector fEvM =
         -- execute
         lift $ fEvM elem >>= lift . handler
 
-{-
-class
-    SignalSource obj arg ret mhnd h |
-      h -> obj, h -> arg, h -> ret, h -> mhnd
-  where
-    reg :: h -> obj -> (arg -> mhnd ret) -> IO (IO ())
+pattern Element :: Glib.GObjectClass obj => DOM.Element -> obj
+pattern Element elem <-
+    (DOM.castToElement &&& (`Glib.isA` DOM.gTypeElement) -> (elem, True))
 
-
-instance
-    (Gtk.GObjectClass obj, SignalDefault ret) =>
-    SignalSource obj arg ret IO
-        (Gtk.Signal obj (arg -> IO ret))
-  where
-    reg sig obj handler =
-      do
-        cid <- Gtk.on obj sig handler
-        return (Gtk.signalDisconnect cid)
-
-instance
-    (Gtk.GObjectClass obj, SignalDefault ret) =>
-    SignalSource obj () ret IO
-        (Gtk.Signal obj (IO ret))
-  where
-    reg sig obj handler =
-      do
-        cid <- Gtk.on obj sig (handler ())
-        return (Gtk.signalDisconnect cid)
-
-instance
-    (Gtk.GObjectClass obj, SignalDefault ret) =>
-    SignalSource obj () ret (Gtk.EventM e)
-        (Gtk.Signal obj (Gtk.EventM e ret))
-  where
-    reg sig obj handler =
-      do
-        cid <- Gtk.on obj sig $ handler ()
-        return (Gtk.signalDisconnect cid)
-
-on ::
-    (SignalSource obj arg ret mhnd sig, SignalDefault ret,
-     Mc.WorldRunner IO m (wr IO m), Monad m, MonadIO mhnd) =>
-    obj -> sig -> Mc.ProcessT m (Mc.World IO m wr) (Mc.Event arg)
-on obj sig =
-    Mc.listen
-        (\handler -> liftBase $ reg sig obj (\arg -> liftIO (handler arg) >> return signalDefault))
-        (\dispose -> liftBase $ dispose)
-
-infixl 0 `on`
-
-
-data Replying obj arg ret (mhnd :: * -> *) sig = Replying sig ret
-
-instance
-    (SignalSource obj arg ret mhnd sig, Monad mhnd) =>
-    SignalSource obj arg () mhnd
-        (Replying obj arg ret mhnd sig)
-  where
-    reg (Replying sig ret) obj handler =
-        reg sig obj (\x -> handler x >> return ret)
-
-infixl 1 `Replying`
-
-
-data ReplyingV obj arg ret (mhnd :: * -> *) sig = ReplyingV sig
-
-instance
-    (SignalSource obj arg ret mhnd sig, Monad mhnd, MonadIO mhnd) =>
-    SignalSource obj (ret -> mhnd (), arg) () mhnd
-        (ReplyingV obj arg ret mhnd sig)
-  where
-    reg (ReplyingV sig) obj handler = reg sig obj handler'
-      where
-        handler' x =
-          do
-            v <- liftIO $ newEmptyMVar
-            handler (liftIO . putMVar v, x)
-            liftIO $ takeMVar v
-
-
-data Looking' obj arg ret (mhnd :: * -> *) val sig = Looking' sig (arg -> mhnd val)
-
-instance
-    (SignalSource obj arg ret mhnd sig, Monad mhnd, MonadIO mhnd) =>
-    SignalSource obj val ret mhnd
-        (Looking' obj arg ret mhnd val sig)
-  where
-    reg (Looking' sig mval) obj handler = reg sig obj (\x -> mval x >>= handler)
-
-infixl 1 `Looking'`
-
-looking sig mval = Looking' sig (const mval)
-
-infixl 1 `looking`
-
--- |Actuate an event handling process.
-gtkReactimate ::
-    (Mc.WorldRunner IO m (wr IO m), MonadBaseControl IO m, Monad m) =>
-    Mc.ProcessT m (Mc.World IO m wr) (Mc.Event Void) ->
-    m ()
-gtkReactimate sf =
-  do
-    liftBase Gtk.initGUI
-    Mc.start (liftBase Gtk.mainQuit) sf
-    liftBase Gtk.mainGUI
-
---
--- Utility
---
-
-onClicked ::
-    (Mc.WorldRunner IO m (wr IO m), Monad m, Gtk.WidgetClass self) =>
-    self -> Mc.ProcessT m (Mc.World IO m wr) (Mc.Event ())
-onClicked w = proc world ->
-  do
-    mouse <-
-        w `on` Gtk.buttonPressEvent
-            `looking` ((,) <$> Gtk.eventClick <*> Gtk.eventButton)
-                -< world
-    click <- Mc.filterEvent (== (Gtk.SingleClick, Gtk.LeftButton)) -< mouse
-    returnA -< Mc.collapse click
-
--}
