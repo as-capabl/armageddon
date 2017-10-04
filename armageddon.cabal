@@ -55,6 +55,7 @@ executable armageddon
                      , relational-query-HDBC
 
   other-modules:       Graphics.UI.McGtk
+                     , Graphics.UI.McWebkit
                      , Async
                      , AuthDialog
                      , BasicModel
