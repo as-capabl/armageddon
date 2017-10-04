@@ -61,6 +61,7 @@ makePrisms ''Unordered
 --
 data T = T {
     _regMBox :: TheMBox (Unordered Registration),
+    _updateRPHMBox :: TheMBox (BMText, [Hdon.Status], Bool),
     _selDSMBox :: TheMBox DataSource
   }
 makeLenses ''T
@@ -72,8 +73,10 @@ init =
   do
     regB <- mailboxNew
     selDSB <- mailboxNew
+    updateRPHB <- mailboxNew
     return $ T {
         _regMBox = regB,
+        _updateRPHMBox = updateRPHB,
         _selDSMBox = selDSB
       }
 
@@ -204,13 +207,8 @@ onSelDS model = proc world ->
 readDS :: DataSource -> ProcessT (R.ResourceT IO) (Event ()) (Event Hdon.Status)
 readDS ds0 = constructT $
   do
-    Right sts <- liftIO $ initialReadDs ds0
-    mapM_ yield $ reverse sts
     auto $ (C.catchC (sourceReadDs ds0) (liftIO . printEx)) C.=$= filterUpdateC
   where
-    initialReadDs ds@(DataSource _ DSHome) = Hdon.getHomeTimeline (ds ^. hastodonClient)
-    initialReadDs ds = Hdon.getPublicTimeline (ds ^. hastodonClient)
-
     sourceReadDs ds@(DataSource _ DSHome) = Hdon.sourceUserTimeline (ds ^. hastodonClient)
     sourceReadDs ds = Hdon.sourcePublicTimeline (ds ^. hastodonClient)
 
@@ -220,4 +218,19 @@ readDS ds0 = constructT $
 
     printEx :: CA.ParseError -> IO ()
     printEx = print
+
+requireRange :: T -> DataSource -> RPH -> IO ()
+requireRange model ds0 rph = fmap (const ()) $ forkIO $
+  do
+    Right sts <- initialReadDs ds0
+    let testNoLeft tgt = not . null $ filter (\st -> Hdon.statusId st == tgt) sts
+        noLeft = maybe False testNoLeft (rph ^. rphLower)
+    postGUIAsync $ mailboxPost (model ^. updateRPHMBox) (rph ^. rphId, sts, noLeft)
+  where
+    initialReadDs ds@(DataSource _ DSHome) = Hdon.getHomeTimeline (ds ^. hastodonClient)
+    initialReadDs ds = Hdon.getPublicTimeline (ds ^. hastodonClient)
+
+onUpdateRange model = proc world ->
+  do
+    onMailboxPost $ model ^. updateRPHMBox -< world
 

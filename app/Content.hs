@@ -1,12 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE Strict, StrictData #-}
 
 module
     Content
 where
 
+import Control.Monad (forM_, mzero)
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
+import Control.Lens
+import qualified Data.Tree as Tree
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as TextL
 import qualified Data.Text.Lazy.Builder as TextL
@@ -16,15 +20,40 @@ import qualified Graphics.UI.Gtk.WebKit.DOM.Element as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.Node as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.CSSStyleDeclaration as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.HTMLImageElement as DOM
+import qualified Graphics.UI.Gtk.WebKit.DOM.HTMLAnchorElement as DOM
 import qualified Web.Hastodon as Hdon
 
+import BasicModel
+
+--
+-- Utility
+--
+data SomeNode = forall a. DOM.NodeClass a => SomeNode a
+
+nestElement ::
+    (Monad m, MonadIO m) =>
+    Tree.Tree SomeNode -> m ()
+nestElement (Tree.Node pr lCh) =
+  do
+    forM_ lCh $ \trCh@(Tree.Node ch _) ->
+      do
+        nestElement trCh
+        doAppend pr ch
+  where
+    doAppend (SomeNode x) (SomeNode y) = DOM.appendChild x $ Just y
+
+elemTree x l = Tree.Node (SomeNode x) l
+
+--
+-- Manipulation of armageddon specific DOM
+--
 classStatus = "hdon_status" :: Text.Text
 classAvatar = "hdon_avatar" :: Text.Text
 classStatusMain = "hdon_status_main" :: Text.Text
 classStatusClear = "hdon_status_clear" :: Text.Text
 classUsername = "hdon_username" :: Text.Text
 classContent = "hdon_content" :: Text.Text
-
+classRPH = "hdon_rph" :: Text.Text
 
 initialHtml :: Text.Text
 initialHtml = TextL.toStrict $ TextL.toLazyText html
@@ -49,7 +78,8 @@ initialHtml = TextL.toStrict $ TextL.toLazyText html
         "div.hdon_avatar img { width: 40pt; height: 40pt; }",
         "div.hdon_status_main { float: left; width: calc(100% - 40pt); }\n",
         "div.hdon_username { font-weight: bold; }\n",
-        "div.hdon_content { margin-left: 5pt }\n"
+        "div.hdon_content { margin-left: 5pt }\n",
+        "div.hdon_rph { margin: 6pt 6pt 6pt 6pt; }\n"
       ]
     styleStatus = mconcat
       [
@@ -70,6 +100,7 @@ domifyStatus doc st = runMaybeT $
   do
     ch <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
     DOM.setClassName ch classStatus
+    DOM.setId ch (statusIdToDomId $ Hdon.statusId st)
 
     avatarEl <- domifyAvatar
     DOM.appendChild ch $ Just avatarEl
@@ -129,3 +160,72 @@ domifyStatus doc st = runMaybeT $
         DOM.setInnerHTML ch $ Just content
 
         return ch
+
+pushRPH ::
+    MonadIO m =>
+    DOM.Document -> m (Maybe BMText)
+pushRPH doc = runMaybeT $
+  do
+    pr <- MaybeT $ getTimelineParent doc
+
+    tId <- makeUniqueId pr
+
+    ch <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
+    DOM.setClassName ch classRPH
+    DOM.setId ch tId
+
+    ach <- fmap DOM.castToHTMLAnchorElement $
+        MaybeT $ DOM.createElement doc (Just "a" :: Maybe Text.Text)
+    DOM.setHref ach ("about:armageddon" :: Text.Text)
+
+    txt <- MaybeT $ DOM.createTextNode doc ("Read more..." :: Text.Text)
+
+    nestElement $ elemTree ch
+      [
+        elemTree ach
+          [
+            elemTree txt []
+          ]
+      ]
+
+    mfc <- lift $ DOM.getFirstChild pr
+    DOM.insertBefore pr (Just ch) mfc
+
+    return tId
+
+  where
+    -- Any unique id is OK.
+    -- Here `makeUniqueId` returns a modification of top element
+    makeUniqueId pr =
+      do
+        mfch <- lift $ DOM.getFirstElementChild pr
+        case mfch
+          of
+            Just fch ->
+              do
+                fId <- domIdToStatusId <$> DOM.getId fch
+                if fId == statusIdInvalid then mzero else return ()
+                return $ (Text.pack "rph_") `mappend` Text.pack (show fId)
+            Nothing ->
+                return $ (Text.pack "rph_blank")
+
+extractRPH ::
+    MonadIO m =>
+    BMText -> DOM.Document -> m (Maybe RPH)
+extractRPH tId doc = runMaybeT $
+  do
+    rphElem <- MaybeT $ DOM.getElementById doc tId
+
+    nxElem <- lift $ DOM.getNextElementSibling rphElem
+    nxId <- traverse DOM.getId nxElem
+
+    pvElem <- lift $ DOM.getPreviousElementSibling rphElem
+    pvId <- traverse DOM.getId pvElem
+
+    return $ RPH
+      {
+        _rphId = tId,
+        _rphUpper = domIdToStatusId <$> pvId,
+        _rphLower = domIdToStatusId <$> nxId
+      }
+

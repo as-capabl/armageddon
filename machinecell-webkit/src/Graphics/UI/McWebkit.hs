@@ -42,22 +42,6 @@ import Debug.Trace
 
 
 
-class
-    SignalDefault a
-  where
-    signalDefault :: a
-
-instance
-    SignalDefault ()
-  where
-    signalDefault = ()
-
-instance
-    SignalDefault Bool
-  where
-    signalDefault = True
-
-
 on ::
     (Mc.WorldRunner IO m (wr IO m), Monad m, MonadIO m,
         DOM.EventClass e, DOM.EventTargetClass self) =>

@@ -11,6 +11,7 @@ import Control.Category
 
 import Control.Lens
 import qualified Data.Text as Text
+import qualified Data.Text.Read as Text
 import GHC.Generics (Generic)
 import Data.Hashable (Hashable)
 
@@ -84,3 +85,29 @@ makeClassy ''DataSource
 instance HasRegistration DataSource where {registration = dsreg}
 instance HasHastodonClient DataSource where {hastodonClient = dsreg . hastodonClient}
 
+-- Range Placeholder
+data RPH = RPH
+  {
+    _rphId :: BMText,
+    _rphUpper :: Maybe Int,
+    _rphLower :: Maybe Int
+  }
+  deriving (Eq, Show)
+makeLenses ''RPH
+
+--
+-- Basic functions
+--
+statusPrefix = Text.pack "status_"
+
+statusIdInvalid = -1
+
+statusIdToDomId :: Int -> BMText
+statusIdToDomId x = statusPrefix `mappend` Text.pack (show x)
+
+domIdToStatusId :: BMText -> Int
+domIdToStatusId x =
+    case Text.decimal $ Text.drop (Text.length statusPrefix) x
+      of
+        Left _ -> statusIdInvalid
+        Right (y, _) -> y

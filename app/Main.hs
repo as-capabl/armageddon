@@ -15,7 +15,8 @@ import Control.Arrow
 import Control.Lens hiding (set)
 import Data.Void
 import Data.Tree
-import Control.Monad (forever)
+import Data.Maybe (fromMaybe, isNothing)
+import Control.Monad (forever, guard, forM_, mplus)
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 import Control.Monad.Trans.Resource
@@ -34,6 +35,7 @@ import qualified Graphics.UI.Gtk.WebKit.DOM.CSSStyleDeclaration as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.EventM as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.Event as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.MouseEvent as DOM
+import qualified Graphics.UI.Gtk.WebKit.DOM.UIEvent as DOM
 import qualified Graphics.UI.Gtk.WebKit.WebView as DOM
 
 import Control.Arrow.Machine
@@ -56,6 +58,20 @@ import Debug.Trace
 
 type TheWorld = World IO IO IORefRunner
 
+--
+-- Utility
+--
+wrSwitchDiff ::
+    Eq a =>
+    (a -> ProcessT IO TheWorld b) ->
+    a ->
+    ProcessT IO (TheWorld, Event a) b
+wrSwitchDiff f x0 = evolve $
+  do
+    x <- wSwitchAfter $ f x0 *** filterEvent (/= x0)
+    finishWith $ wrSwitchDiff f x
+
+
 
 main :: IO ()
 main = gtkReactimate $ evolve $
@@ -65,8 +81,11 @@ main = gtkReactimate $ evolve $
     switchAfter $
         muted &&& onActivation
 
-    frm <- lift $ MainForm.setup Content.initialHtml
-    finishWith $ driveMainForm model frm
+    mf <- lift $ MainForm.setup Content.initialHtml
+    _ <- wSwitchAfter $
+        muted &&& (mf ^. MainForm.statusView `on` DOM.loadFinished)
+
+    finishWith $ driveMainForm model mf
 
 
 authNew :: DataModel.T -> ProcessT IO (TheWorld, Event ()) (Event Void)
@@ -112,17 +131,14 @@ driveMainForm model mf = proc world ->
     fire $ DataModel.selDS model -< newDs
 
     -- Status pane
-    ds <- DataModel.onSelDS model -< world
-    wrSwitch0 -< (world, fetch <$> ds)
-
     ld <-
-        mf ^. MainForm.statusView `on` DOM.loadFinished
+        onActivation
             -< world
     doc <-
         filterJust
         <<< fire0 (webViewGetDomDocument $ mf ^. MainForm.statusView)
             -< collapse ld
-    wrSwitch0 -< (world, driveDocument <$> doc)
+    wrSwitch0 -< (world, driveDocument model <$> doc)
 
     -- Post Box
     tootClick <-
@@ -136,15 +152,22 @@ driveMainForm model mf = proc world ->
             -< world
     construct (await >> stop) -< del
   where
-    fetch = fetchPublicTimeline (mf ^. MainForm.statusView)
     toot = proc world ->
       do
         fire0 (postToot $ mf ^. MainForm.postBox) <<< onActivation -< world
 
 driveDocument ::
-    DOM.Document -> ProcessT IO TheWorld (Event Void)
-driveDocument doc = proc world ->
+    DataModel.T -> DOM.Document -> ProcessT IO TheWorld (Event Void)
+driveDocument model doc = proc world ->
   do
+    ds <- DataModel.onSelDS model -< world
+
+    wrSwitch0 -< (world, driveDs <$> ds)
+
+    fire (\(placeId, sts, noLeft) -> replaceWithStatus doc sts placeId noLeft)
+        <<< DataModel.onUpdateRange model
+            -< world
+
     cl <- McWeb.onSelector doc
         (DOM.EventName "click" :: DOM.EventName DOM.Document DOM.MouseEvent)
         ("div.hdon_username" :: BMText)
@@ -152,25 +175,56 @@ driveDocument doc = proc world ->
             -< world
     fire0 $ putStrLn "Hello!" -< collapse cl
     muted -< world
+  where
+    driveDs ds = proc world ->
+      do
+        fire0 (clearWebView doc) <<< onActivation -< world
+
+        scr <- fire0 (isScrollTop doc) <<<
+            McWeb.on doc
+                (DOM.EventName "scroll" :: DOM.EventName DOM.Document DOM.UIEvent)
+                (return ())
+                    -< world
+        wrSwitchDiff (driveDsSub ds) True -< (world, scr)
+
+    driveDsSub ds True = proc world ->
+      do
+        fire0 (setRPH ds) <<< onActivation -< world
+        fetchPublicTimeline doc ds -< world
+
+    driveDsSub ds False = proc world ->
+      do
+        muted -< world
+
+    setRPH ds = runMaybeT $
+      do
+        rphId <- MaybeT $ Content.pushRPH doc
+        rph <- MaybeT $ Content.extractRPH rphId doc
+        liftIO $ DataModel.requireRange model ds rph
+
+isScrollTop :: DOM.Document -> IO Bool
+isScrollTop doc = fmap (fromMaybe True) $ runMaybeT $
+  do
+    body <- MaybeT $ DOM.getBody doc
+    pos <- DOM.getScrollTop body
+    return $ pos == 0
 
 fetchPublicTimeline ::
-    WebView ->
+    DOM.Document ->
     BasicModel.DataSource ->
     ProcessT IO TheWorld (Event Void)
-fetchPublicTimeline wv ds0 = proc world ->
+fetchPublicTimeline doc ds0 = proc world ->
   do
-    fire0 (clearWebView wv) <<< onActivation -< world
     sts <- Async.runResource
         (Async.PollTimeout 100000 priorityDefaultIdle)
         (DataModel.readDS ds0)
             -< world
-    muted <<< fire (prependStatus wv) -< sts
+    muted <<< fire (prependStatus doc) -< sts
 
-clearWebView wv = runMaybeT go >> return ()
+clearWebView doc = runMaybeT go >> return ()
   where
     go =
       do
-        doc <- MaybeT $ webViewGetDomDocument wv
         body <- MaybeT $ Content.getTimelineParent doc
 
         forever $ -- Until getFirstChild fails
@@ -178,18 +232,46 @@ clearWebView wv = runMaybeT go >> return ()
             ch <- MaybeT $ DOM.getFirstChild body
             DOM.removeChild body (Just ch)
 
+checkExist :: DOM.Document -> BMText -> MaybeT IO ()
+checkExist doc tId =
+  do
+    pre <- DOM.getElementById doc tId
+    guard $ isNothing pre
 
-prependStatus wv st = runMaybeT go >> return ()
+prependStatus doc st = runMaybeT go >> return ()
   where
     go =
       do
-        doc <- MaybeT $ webViewGetDomDocument wv
         body <- MaybeT $ Content.getTimelineParent doc
+        checkExist doc (statusIdToDomId $ Hdon.statusId st)
 
+        -- Prepend
         ch <- MaybeT $ Content.domifyStatus doc st
 
         mfc <- lift $ DOM.getFirstChild body
         DOM.insertBefore body (Just ch) mfc
+
+replaceWithStatus doc sts placeId del = runMaybeT go >> return ()
+  where
+    go =
+      do
+        body <- MaybeT $ Content.getTimelineParent doc
+        frag <- MaybeT $ DOM.createDocumentFragment doc
+
+        forM_ sts $ \st ->
+          do
+            checkExist doc (statusIdToDomId $ Hdon.statusId st)
+
+            -- Prepend
+            ch <- MaybeT $ Content.domifyStatus doc st
+            DOM.appendChild frag (Just ch)
+            return ()
+          `mplus` return ()
+
+        placeElem <- DOM.getElementById doc placeId
+        DOM.insertBefore body (Just frag) placeElem
+
+        if del then DOM.removeChild body placeElem >> return () else return ()
 
 postToot form =
   do
