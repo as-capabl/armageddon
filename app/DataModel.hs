@@ -28,7 +28,7 @@ import Control.Arrow.Machine.IORefRunner
 import Control.Arrow.Machine.ConduitAdaptor
 
 import qualified Data.Text as Text
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, catMaybes)
 
 import qualified Data.Conduit as C
 import qualified Data.Conduit.List as C
@@ -222,13 +222,20 @@ readDS ds0 = constructT $
 requireRange :: T -> DataSource -> RPH -> IO ()
 requireRange model ds0 rph = fmap (const ()) $ forkIO $
   do
-    Right sts <- initialReadDs ds0
+    res <- initialReadDs ds0
+    sts <- either (\s -> error ("requireRange error\n" ++ show s)) return res
     let testNoLeft tgt = not . null $ filter (\st -> Hdon.statusId st == tgt) sts
         noLeft = maybe False testNoLeft (rph ^. rphLower)
     postGUIAsync $ mailboxPost (model ^. updateRPHMBox) (rph ^. rphId, sts, noLeft)
   where
-    initialReadDs ds@(DataSource _ DSHome) = Hdon.getHomeTimeline (ds ^. hastodonClient)
-    initialReadDs ds = Hdon.getPublicTimeline (ds ^. hastodonClient)
+    initialReadDs ds@(DataSource _ DSHome) = Hdon.getHomeTimelineEx q (ds ^. hastodonClient)
+    initialReadDs ds = Hdon.getPublicTimelineEx q (ds ^. hastodonClient)
+    q = catMaybes [
+        qMin <$> (rph ^. rphLower),
+        qMax <$> (rph ^. rphUpper)
+      ]
+    qMin sId = ("min_id", Just (show sId))
+    qMax sId = ("max_id", Just (show sId))
 
 onUpdateRange model = proc world ->
   do

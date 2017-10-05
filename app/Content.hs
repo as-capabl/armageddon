@@ -54,6 +54,8 @@ classStatusClear = "hdon_status_clear" :: Text.Text
 classUsername = "hdon_username" :: Text.Text
 classContent = "hdon_content" :: Text.Text
 classRPH = "hdon_rph" :: Text.Text
+classRPHWaiting = "waiting" :: Text.Text
+classRPHLoading = "loading" :: Text.Text
 
 initialHtml :: Text.Text
 initialHtml = TextL.toStrict $ TextL.toLazyText html
@@ -79,7 +81,9 @@ initialHtml = TextL.toStrict $ TextL.toLazyText html
         "div.hdon_status_main { float: left; width: calc(100% - 40pt); }\n",
         "div.hdon_username { font-weight: bold; }\n",
         "div.hdon_content { margin-left: 5pt }\n",
-        "div.hdon_rph { margin: 6pt 6pt 6pt 6pt; }\n"
+        "div.hdon_rph { margin: 6pt 6pt 6pt 6pt; }\n",
+        "div.hdon_rph a.waiting {}\n",
+        "div.hdon_rph a.loading {}\n"
       ]
     styleStatus = mconcat
       [
@@ -174,9 +178,12 @@ pushRPH doc = runMaybeT $
     DOM.setClassName ch classRPH
     DOM.setId ch tId
 
-    ach <- fmap DOM.castToHTMLAnchorElement $
-        MaybeT $ DOM.createElement doc (Just "a" :: Maybe Text.Text)
+    ach <-
+        fmap DOM.castToHTMLAnchorElement $
+        MaybeT $
+        DOM.createElement doc (Just "a" :: Maybe Text.Text)
     DOM.setHref ach ("about:armageddon" :: Text.Text)
+    DOM.setClassName ach classRPHWaiting
 
     txt <- MaybeT $ DOM.createTextNode doc ("Read more..." :: Text.Text)
 

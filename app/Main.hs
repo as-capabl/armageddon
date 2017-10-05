@@ -156,30 +156,23 @@ driveMainForm model mf = proc world ->
       do
         fire0 (postToot $ mf ^. MainForm.postBox) <<< onActivation -< world
 
+-- Handle DOM event here.
 driveDocument ::
     DataModel.T -> DOM.Document -> ProcessT IO TheWorld (Event Void)
 driveDocument model doc = proc world ->
   do
+    -- Data source handling
     ds <- DataModel.onSelDS model -< world
-
     wrSwitch0 -< (world, driveDs <$> ds)
 
-    fire (\(placeId, sts, noLeft) -> replaceWithStatus doc sts placeId noLeft)
-        <<< DataModel.onUpdateRange model
-            -< world
-
-    cl <- McWeb.onSelector doc
-        (DOM.EventName "click" :: DOM.EventName DOM.Document DOM.MouseEvent)
-        ("div.hdon_username" :: BMText)
-        return
-            -< world
-    fire0 $ putStrLn "Hello!" -< collapse cl
     muted -< world
   where
     driveDs ds = proc world ->
       do
+        -- Clear current web view on activation.
         fire0 (clearWebView doc) <<< onActivation -< world
 
+        -- Show up toots (it depends on scroll state)
         scr <- fire0 (isScrollTop doc) <<<
             McWeb.on doc
                 (DOM.EventName "scroll" :: DOM.EventName DOM.Document DOM.UIEvent)
@@ -187,18 +180,41 @@ driveDocument model doc = proc world ->
                     -< world
         wrSwitchDiff (driveDsSub ds) True -< (world, scr)
 
+        -- Handle placeholder click.
+        cl <- McWeb.onSelector doc
+            (DOM.EventName "click" :: DOM.EventName DOM.Document DOM.MouseEvent)
+            ("div.hdon_rph a.waiting" :: BMText)
+            (\self -> DOM.returnValue False >> return self)
+                -< world
+        fire (runMaybeT . requireRangeByElem ds) -< cl
+
+        -- Handle placeholder substitution by the model.
+        fire (\(placeId, sts, noLeft) -> replaceWithStatus doc sts placeId noLeft)
+            <<< DataModel.onUpdateRange model
+                -< world
+
     driveDsSub ds True = proc world ->
       do
-        fire0 (setRPH ds) <<< onActivation -< world
+        fire0 (runMaybeT $ setRPH ds) <<< onActivation -< world
         fetchPublicTimeline doc ds -< world
 
     driveDsSub ds False = proc world ->
       do
         muted -< world
 
-    setRPH ds = runMaybeT $
+    setRPH ds =
       do
         rphId <- MaybeT $ Content.pushRPH doc
+        requireRangeById ds rphId
+
+    requireRangeByElem ds elem =
+      do
+        pr <- MaybeT $ DOM.getParentNode elem
+        rphId <- DOM.getId $ DOM.castToElement pr
+        requireRangeById ds rphId
+
+    requireRangeById ds rphId =
+      do
         rph <- MaybeT $ Content.extractRPH rphId doc
         liftIO $ DataModel.requireRange model ds rph
 
@@ -266,7 +282,8 @@ replaceWithStatus doc sts placeId del = runMaybeT go >> return ()
             ch <- MaybeT $ Content.domifyStatus doc st
             DOM.appendChild frag (Just ch)
             return ()
-          `mplus` return ()
+          `mplus`
+            return ()
 
         placeElem <- DOM.getElementById doc placeId
         DOM.insertBefore body (Just frag) placeElem
