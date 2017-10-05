@@ -26,8 +26,8 @@ Experimental.
 - [ ] Show user profile
 - [X] Show icons
 - [ ] Cache timelines
-- [ ] Control timeline flow
-    - [ ] Show "read more"
-    - [ ] Stop fetching toots unless the scroll position is on top
+- [X] Control timeline flow
+    - [X] Show "read more"
+    - [X] Stop fetching toots unless the scroll position is on top
 - and more ...
 
