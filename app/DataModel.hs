@@ -5,6 +5,7 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ViewPatterns #-}
 
 -- Global event
 module
@@ -204,8 +205,8 @@ onSelDS model = proc world ->
   do
     onMailboxPost $ model ^. selDSMBox -< world
 
-readDS :: DataSource -> ProcessT (R.ResourceT IO) (Event ()) (Event Hdon.Status)
-readDS ds0 = constructT $
+readDSS :: DataSource' DSSKind -> ProcessT (R.ResourceT IO) (Event ()) (Event Hdon.Status)
+readDSS ds0 = constructT $
   do
     auto $ (C.catchC (sourceReadDs ds0) (liftIO . printEx)) C.=$= filterUpdateC
   where
@@ -220,7 +221,7 @@ readDS ds0 = constructT $
     printEx = print
 
 requireRange :: T -> DataSource -> RPH -> IO ()
-requireRange model ds0 rph = fmap (const ()) $ forkIO $
+requireRange model ((^? _DSSSource) -> Just ds0) rph = fmap (const ()) $ forkIO $
   do
     res <- initialReadDs ds0
     sts <- either (\s -> error ("requireRange error\n" ++ show s)) return res

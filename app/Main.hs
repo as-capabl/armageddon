@@ -131,13 +131,11 @@ driveMainForm model mf = proc world ->
     fire $ DataModel.selDS model -< newDs
 
     -- Status pane
-    ld <-
-        onActivation
-            -< world
     doc <-
         filterJust
         <<< fire0 (webViewGetDomDocument $ mf ^. MainForm.statusView)
-            -< collapse ld
+        <<< onActivation
+            -< world
     wrSwitch0 -< (world, driveDocument model <$> doc)
 
     -- Post Box
@@ -193,10 +191,10 @@ driveDocument model doc = proc world ->
             <<< DataModel.onUpdateRange model
                 -< world
 
-    driveDsSub ds True = proc world ->
+    driveDsSub ds@((^? _DSSSource) -> Just dss) True = proc world ->
       do
         fire0 (runMaybeT $ setRPH ds) <<< onActivation -< world
-        fetchPublicTimeline doc ds -< world
+        streamStatuses doc dss -< world
 
     driveDsSub ds False = proc world ->
       do
@@ -225,15 +223,15 @@ isScrollTop doc = fmap (fromMaybe True) $ runMaybeT $
     pos <- DOM.getScrollTop body
     return $ pos == 0
 
-fetchPublicTimeline ::
+streamStatuses ::
     DOM.Document ->
-    BasicModel.DataSource ->
+    DataSource' DSSKind ->
     ProcessT IO TheWorld (Event Void)
-fetchPublicTimeline doc ds0 = proc world ->
+streamStatuses doc dss = proc world ->
   do
     sts <- Async.runResource
         (Async.PollTimeout 100000 priorityDefaultIdle)
-        (DataModel.readDS ds0)
+        (DataModel.readDSS dss)
             -< world
     muted <<< fire (prependStatus doc) -< sts
 

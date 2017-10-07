@@ -46,16 +46,16 @@ data DSItem = DsiReg Registration | DsiDs DataSource deriving (Eq, Show)
 makeDsiTree x =
     Node (DsiReg x)
       [
-        Node (DsiDs (DataSource x DSHome)) [],
-        Node (DsiDs (DataSource x DSPublic)) []
+        Node (DsiDs (DataSource x (DSS DSHome))) [],
+        Node (DsiDs (DataSource x (DSS DSPublic))) []
         --, Node "notification" []
       ]
 
 dsiLabel (DsiReg reg) = reg ^. host
-dsiLabel (DsiDs (DataSource _ DSHome)) = "home"
-dsiLabel (DsiDs (DataSource _ DSPublic)) = "public"
+dsiLabel (DsiDs (DataSource _ (DSS DSHome))) = "home"
+dsiLabel (DsiDs (DataSource _ (DSS DSPublic))) = "public"
 
-getDs (DsiReg reg) = DataSource reg DSHome
+getDs (DsiReg reg) = DataSource reg (DSS DSHome)
 getDs (DsiDs ds) = ds
 
 --

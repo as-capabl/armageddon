@@ -1,6 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE Strict, StrictData #-}
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric, DeriveFunctor #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module
     BasicModel
@@ -72,18 +73,31 @@ instance
 instance Hashable Registration
 
 -- Data Source
-data DSKind = DSHome | DSPublic | DSNotification | DSUserStatus BMText deriving (Eq, Show)
+data DSKind = DSS DSSKind | DSN DSNKind deriving (Eq, Show)
+data DSSKind = DSHome | DSPublic | DSUserStatus BMText deriving (Eq, Show)
+data DSNKind = DSNotification deriving (Eq, Show)
 
-data DataSource = DataSource
+data DataSource' kind = DataSource
   {
     _dsreg :: Registration,
-    _dsKind :: DSKind
+    _dsKind :: kind
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Functor)
 
-makeClassy ''DataSource
-instance HasRegistration DataSource where {registration = dsreg}
-instance HasHastodonClient DataSource where {hastodonClient = dsreg . hastodonClient}
+-- makeClassy ''DataSource'
+dsreg :: Lens' (DataSource' kind) Registration
+dsreg = lens _dsreg (\ds val -> ds {_dsreg = val})
+
+instance HasRegistration (DataSource' kind) where {registration = dsreg}
+instance HasHastodonClient (DataSource' kind) where {hastodonClient = dsreg . hastodonClient}
+
+type DataSource = DataSource' DSKind
+_DSSSource :: Prism' DataSource (DataSource' DSSKind)
+_DSSSource = prism' fromDSS toDSS
+  where
+    fromDSS (DataSource k r) = DataSource k (DSS r)
+    toDSS (DataSource k (DSS r)) = Just (DataSource k r)
+    toDSS _ = Nothing
 
 -- Range Placeholder
 data RPH = RPH
