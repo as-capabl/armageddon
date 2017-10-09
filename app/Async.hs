@@ -63,6 +63,7 @@ run' runner poller body = proc world ->
 
     listenIt (outC, threadId) = proc world ->
       do
+        -- FIXME pollEnd prints an error message when the thread is already finished
         idle <- listen
             (\h -> pollStart poller (do {b <- Unagi.isActive outC; h b; return b}))
             (\sigId -> killThread threadId >> pollEnd poller sigId)

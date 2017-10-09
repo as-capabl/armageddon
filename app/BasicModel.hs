@@ -1,7 +1,9 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Strict, StrictData #-}
 {-# LANGUAGE DeriveGeneric, DeriveFunctor #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module
     BasicModel
@@ -92,12 +94,28 @@ instance HasRegistration (DataSource' kind) where {registration = dsreg}
 instance HasHastodonClient (DataSource' kind) where {hastodonClient = dsreg . hastodonClient}
 
 type DataSource = DataSource' DSKind
+
 _DSSSource :: Prism' DataSource (DataSource' DSSKind)
 _DSSSource = prism' fromDSS toDSS
   where
     fromDSS (DataSource k r) = DataSource k (DSS r)
     toDSS (DataSource k (DSS r)) = Just (DataSource k r)
     toDSS _ = Nothing
+
+pattern DSSSource x <- ((^? _DSSSource) -> Just x)
+  where
+    DSSSource x = x ^. re _DSSSource
+
+_DSNSource :: Prism' DataSource (DataSource' DSNKind)
+_DSNSource = prism' fromDSN toDSN
+  where
+    fromDSN (DataSource k r) = DataSource k (DSN r)
+    toDSN (DataSource k (DSN r)) = Just (DataSource k r)
+    toDSN _ = Nothing
+
+pattern DSNSource x <- ((^? _DSNSource) -> Just x)
+  where
+    DSNSource x = x ^. re _DSNSource
 
 -- Range Placeholder
 data RPH = RPH
@@ -112,16 +130,26 @@ makeLenses ''RPH
 --
 -- Basic functions
 --
-statusPrefix = Text.pack "status_"
+statusPrefix :: BMText
+statusPrefix = "status_"
 
+notificationPrefix :: BMText
+notificationPrefix = "notification_"
+
+statusIdInvalid :: Int
 statusIdInvalid = -1
 
 statusIdToDomId :: Int -> BMText
 statusIdToDomId x = statusPrefix `mappend` Text.pack (show x)
 
-domIdToStatusId :: BMText -> Int
+domIdToStatusId :: BMText -> Maybe Int
 domIdToStatusId x =
-    case Text.decimal $ Text.drop (Text.length statusPrefix) x
+    case Text.decimal numPart
       of
-        Left _ -> statusIdInvalid
-        Right (y, _) -> y
+        Left _ -> Nothing
+        Right (y, _) -> Just y
+  where
+    (_, numPart) = Text.breakOnEnd "_" x
+
+notificationIdToDomId :: Int -> BMText
+notificationIdToDomId x = notificationPrefix `mappend` Text.pack (show x)

@@ -6,7 +6,7 @@ module
     Content
 where
 
-import Control.Monad (forM_, mzero)
+import Control.Monad (forM_, mzero, join)
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 import Control.Lens
@@ -14,6 +14,7 @@ import qualified Data.Tree as Tree
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as TextL
 import qualified Data.Text.Lazy.Builder as TextL
+import Data.Maybe (catMaybes)
 
 import qualified Graphics.UI.Gtk.WebKit.DOM.Document as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.Element as DOM
@@ -53,7 +54,9 @@ classStatusMain = "hdon_status_main" :: Text.Text
 classStatusClear = "hdon_status_clear" :: Text.Text
 classUsername = "hdon_username" :: Text.Text
 classContent = "hdon_content" :: Text.Text
+classNotification = "hdon_notification" :: Text.Text
 classRPH = "hdon_rph" :: Text.Text
+classQuotation = "quotation" :: Text.Text
 classRPHWaiting = "waiting" :: Text.Text
 classRPHLoading = "loading" :: Text.Text
 
@@ -74,18 +77,20 @@ initialHtml = TextL.toStrict $ TextL.toLazyText html
     style = mconcat
       [
         "p { margin: 0pt 0pt 0pt 0pt; padding: 0pt 0pt 0pt 0pt; }\n",
-        "div.hdon_status { ", styleStatus, " }\n",
+        "div.hdon_status { ", styleListItem, " }\n",
         "div.hdon_status_clear { clear: both; }\n",
         "div.hdon_avatar { float: left; width: 40pt; }\n",
         "div.hdon_avatar img { width: 40pt; height: 40pt; }",
         "div.hdon_status_main { float: left; width: calc(100% - 40pt); }\n",
         "div.hdon_username { font-weight: bold; }\n",
         "div.hdon_content { margin-left: 5pt }\n",
-        "div.hdon_rph { margin: 6pt 6pt 6pt 6pt; }\n",
+        "div.hdon_notification { ", styleListItem, " }\n",
+        "div.hdon_rph { margin: 12pt 6pt; }\n",
         "div.hdon_rph a.waiting {}\n",
-        "div.hdon_rph a.loading {}\n"
+        "div.hdon_rph a.loading {}\n",
+        "div.quotation {margin-left: 20pt}"
       ]
-    styleStatus = mconcat
+    styleListItem = mconcat
       [
         "margin: 1pt 1pt 1pt 1pt;",
         "padding: 5pt 5pt 5pt 5pt;",
@@ -165,6 +170,53 @@ domifyStatus doc st = runMaybeT $
 
         return ch
 
+domifyNotification ::
+    MonadIO m =>
+    DOM.Document -> Hdon.Notification -> m (Maybe DOM.Element)
+domifyNotification doc ntf = runMaybeT $
+  do
+    ch <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
+    DOM.setClassName ch classNotification
+
+    divType <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
+    txtType <- MaybeT $ DOM.createTextNode doc $ Hdon.notificationType ntf
+
+    let account = Hdon.notificationAccount ntf
+    divAccount <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
+    DOM.setClassName divAccount classUsername
+
+    txtAccount <- MaybeT $ DOM.createTextNode doc $ Hdon.accountUsername account
+
+    -- Make quotation part if notificationStatus is Just ...
+    mDivQuot <- liftIO $ runMaybeT $
+      do
+        st <- MaybeT $ return $ Hdon.notificationStatus ntf
+        stDom <- MaybeT $ domifyStatus doc st
+
+        divQuot <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
+        DOM.setClassName divQuot classQuotation
+
+        nestElement $ elemTree divQuot
+          [
+            elemTree stDom []
+          ]
+
+        return divQuot
+    -- notificationId :: Int,
+    -- notificationType :: String,
+    -- notificationCreatedAt :: String,
+    -- notificationAccount :: Account,
+    -- notificationStatus :: Maybe Status
+
+    let subtree = catMaybes [
+            Just $ elemTree divType [elemTree txtType []],
+            Just $ elemTree divAccount [elemTree txtAccount []],
+            elemTree <$> mDivQuot <*> pure []
+          ]
+    nestElement $ elemTree ch subtree
+
+    return ch
+
 pushRPH ::
     MonadIO m =>
     DOM.Document -> m (Maybe BMText)
@@ -182,17 +234,14 @@ pushRPH doc = runMaybeT $
         fmap DOM.castToHTMLAnchorElement $
         MaybeT $
         DOM.createElement doc (Just "a" :: Maybe Text.Text)
-    DOM.setHref ach ("about:armageddon" :: Text.Text)
     DOM.setClassName ach classRPHWaiting
+    DOM.setHref ach ("about:armageddon" :: Text.Text)
 
     txt <- MaybeT $ DOM.createTextNode doc ("Read more..." :: Text.Text)
 
     nestElement $ elemTree ch
       [
-        elemTree ach
-          [
-            elemTree txt []
-          ]
+        elemTree ach [elemTree txt []]
       ]
 
     mfc <- lift $ DOM.getFirstChild pr
@@ -210,16 +259,15 @@ pushRPH doc = runMaybeT $
           of
             Just fch ->
               do
-                fId <- domIdToStatusId <$> DOM.getId fch
-                if fId == statusIdInvalid then mzero else return ()
+                fId <- MaybeT $ domIdToStatusId <$> DOM.getId fch
                 return $ (Text.pack "rph_") `mappend` Text.pack (show fId)
             Nothing ->
                 return $ (Text.pack "rph_blank")
 
 extractRPH ::
     MonadIO m =>
-    BMText -> DOM.Document -> m (Maybe RPH)
-extractRPH tId doc = runMaybeT $
+    DOM.Document -> BMText -> m (Maybe RPH)
+extractRPH doc tId = runMaybeT $
   do
     rphElem <- MaybeT $ DOM.getElementById doc tId
 
@@ -232,7 +280,7 @@ extractRPH tId doc = runMaybeT $
     return $ RPH
       {
         _rphId = tId,
-        _rphUpper = domIdToStatusId <$> pvId,
-        _rphLower = domIdToStatusId <$> nxId
+        _rphUpper = join $ domIdToStatusId <$> pvId,
+        _rphLower = join $ domIdToStatusId <$> nxId
       }
 

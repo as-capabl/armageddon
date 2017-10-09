@@ -191,10 +191,20 @@ driveDocument model doc = proc world ->
             <<< DataModel.onUpdateRange model
                 -< world
 
-    driveDsSub ds@((^? _DSSSource) -> Just dss) True = proc world ->
+        fire (\(placeId, ntfs, noLeft) -> replaceWithNotification doc ntfs placeId noLeft)
+            <<< DataModel.onUpdateNRange model
+                -< world
+
+    driveDsSub ds@(DSSSource dss) True = proc world ->
       do
         fire0 (runMaybeT $ setRPH ds) <<< onActivation -< world
         streamStatuses doc dss -< world
+
+    driveDsSub ds@(DSNSource _) True = proc world ->
+      do
+        fire0 (runMaybeT $ setRPH ds) <<< onActivation -< world
+        -- streamNotifications doc dsn -< world
+        muted -< world
 
     driveDsSub ds False = proc world ->
       do
@@ -213,7 +223,7 @@ driveDocument model doc = proc world ->
 
     requireRangeById ds rphId =
       do
-        rph <- MaybeT $ Content.extractRPH rphId doc
+        rph <- MaybeT $ Content.extractRPH doc rphId
         liftIO $ DataModel.requireRange model ds rph
 
 isScrollTop :: DOM.Document -> IO Bool
@@ -234,6 +244,18 @@ streamStatuses doc dss = proc world ->
         (DataModel.readDSS dss)
             -< world
     muted <<< fire (prependStatus doc) -< sts
+
+streamNotifications ::
+    DOM.Document ->
+    DataSource' DSNKind ->
+    ProcessT IO TheWorld (Event Void)
+streamNotifications doc dsn = proc world ->
+  do
+    sts <- Async.runResource
+        (Async.PollTimeout 100000 priorityDefaultIdle)
+        (DataModel.readDSN dsn)
+            -< world
+    muted <<< fire (prependNotification doc) -< sts
 
 clearWebView doc = runMaybeT go >> return ()
   where
@@ -265,28 +287,49 @@ prependStatus doc st = runMaybeT go >> return ()
         mfc <- lift $ DOM.getFirstChild body
         DOM.insertBefore body (Just ch) mfc
 
-replaceWithStatus doc sts placeId del = runMaybeT go >> return ()
-  where
-    go =
+prependNotification = undefined
+
+replaceWithStatus doc sts placeId del = fmap (const ()) $ runMaybeT $
+  do
+    body <- MaybeT $ Content.getTimelineParent doc
+    frag <- MaybeT $ DOM.createDocumentFragment doc
+
+    forM_ sts $ \st ->
       do
-        body <- MaybeT $ Content.getTimelineParent doc
-        frag <- MaybeT $ DOM.createDocumentFragment doc
+        checkExist doc (statusIdToDomId $ Hdon.statusId st)
 
-        forM_ sts $ \st ->
-          do
-            checkExist doc (statusIdToDomId $ Hdon.statusId st)
+        -- Prepend
+        ch <- MaybeT $ Content.domifyStatus doc st
+        DOM.appendChild frag (Just ch)
+        return ()
+      `mplus`
+        return ()
 
-            -- Prepend
-            ch <- MaybeT $ Content.domifyStatus doc st
-            DOM.appendChild frag (Just ch)
-            return ()
-          `mplus`
-            return ()
+    placeElem <- DOM.getElementById doc placeId
+    DOM.insertBefore body (Just frag) placeElem
 
-        placeElem <- DOM.getElementById doc placeId
-        DOM.insertBefore body (Just frag) placeElem
+    if del then DOM.removeChild body placeElem >> return () else return ()
 
-        if del then DOM.removeChild body placeElem >> return () else return ()
+replaceWithNotification doc ntfs placeId del = fmap (const ()) $ runMaybeT $
+  do
+    body <- MaybeT $ Content.getTimelineParent doc
+    frag <- MaybeT $ DOM.createDocumentFragment doc
+
+    forM_ ntfs $ \st ->
+      do
+        checkExist doc (notificationIdToDomId $ Hdon.notificationId st)
+
+        -- Prepend
+        ch <- MaybeT $ Content.domifyNotification doc st
+        DOM.appendChild frag (Just ch)
+        return ()
+      `mplus`
+        return ()
+
+    placeElem <- DOM.getElementById doc placeId
+    DOM.insertBefore body (Just frag) placeElem
+
+    if del then DOM.removeChild body placeElem >> return () else return ()
 
 postToot form =
   do

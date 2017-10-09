@@ -63,6 +63,7 @@ makePrisms ''Unordered
 data T = T {
     _regMBox :: TheMBox (Unordered Registration),
     _updateRPHMBox :: TheMBox (BMText, [Hdon.Status], Bool),
+    _updateRPHNMBox :: TheMBox (BMText, [Hdon.Notification], Bool),
     _selDSMBox :: TheMBox DataSource
   }
 makeLenses ''T
@@ -75,9 +76,11 @@ init =
     regB <- mailboxNew
     selDSB <- mailboxNew
     updateRPHB <- mailboxNew
+    updateRPHNB <- mailboxNew
     return $ T {
         _regMBox = regB,
         _updateRPHMBox = updateRPHB,
+        _updateRPHNMBox = updateRPHNB,
         _selDSMBox = selDSB
       }
 
@@ -220,6 +223,9 @@ readDSS ds0 = constructT $
     printEx :: CA.ParseError -> IO ()
     printEx = print
 
+readDSN :: DataSource' DSNKind -> ProcessT (R.ResourceT IO) (Event ()) (Event Hdon.Notification)
+readDSN ds0 = stopped
+
 requireRange :: T -> DataSource -> RPH -> IO ()
 requireRange model ((^? _DSSSource) -> Just ds0) rph = fmap (const ()) $ forkIO $
   do
@@ -238,7 +244,27 @@ requireRange model ((^? _DSSSource) -> Just ds0) rph = fmap (const ()) $ forkIO 
     qMin sId = ("min_id", Just (show sId))
     qMax sId = ("max_id", Just (show sId))
 
+requireRange model ((^? _DSNSource) -> Just ds0) rph = fmap (const ()) $ forkIO $
+  do
+    res <- initialReadDs ds0
+    sts <- either (\s -> error ("requireRange error\n" ++ show s)) return res
+    let testNoLeft tgt = not . null $ filter (\st -> Hdon.notificationId st == tgt) sts
+        noLeft = maybe False testNoLeft (rph ^. rphLower)
+    postGUIAsync $ mailboxPost (model ^. updateRPHNMBox) (rph ^. rphId, sts, noLeft)
+  where
+    initialReadDs ds@(DataSource _ DSNotification) = Hdon.getNotifications (ds ^. hastodonClient)
+    q = catMaybes [
+        qMin <$> (rph ^. rphLower),
+        qMax <$> (rph ^. rphUpper)
+      ]
+    qMin sId = ("min_id", Just (show sId))
+    qMax sId = ("max_id", Just (show sId))
+
 onUpdateRange model = proc world ->
   do
     onMailboxPost $ model ^. updateRPHMBox -< world
+
+onUpdateNRange model = proc world ->
+  do
+    onMailboxPost $ model ^. updateRPHNMBox -< world
 

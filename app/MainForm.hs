@@ -47,6 +47,7 @@ makeDsiTree x =
     Node (DsiReg x)
       [
         Node (DsiDs (DataSource x (DSS DSHome))) [],
+        Node (DsiDs (DataSource x (DSN DSNotification))) [],
         Node (DsiDs (DataSource x (DSS DSPublic))) []
         --, Node "notification" []
       ]
@@ -54,6 +55,7 @@ makeDsiTree x =
 dsiLabel (DsiReg reg) = reg ^. host
 dsiLabel (DsiDs (DataSource _ (DSS DSHome))) = "home"
 dsiLabel (DsiDs (DataSource _ (DSS DSPublic))) = "public"
+dsiLabel (DsiDs (DataSource _ (DSN DSNotification))) = "notifications"
 
 getDs (DsiReg reg) = DataSource reg (DSS DSHome)
 getDs (DsiDs ds) = ds
