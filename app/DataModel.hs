@@ -27,6 +27,7 @@ import Control.Arrow.Machine
 import Control.Arrow.Machine.World
 import Control.Arrow.Machine.IORefRunner
 import Control.Arrow.Machine.ConduitAdaptor
+import Graphics.UI.McGtk (GtkRunner)
 
 import qualified Data.Text as Text
 import Data.Maybe (listToMaybe, catMaybes)
@@ -43,15 +44,14 @@ import Database.HDBC.Record
 import System.FilePath
 import System.Directory
 
-import Graphics.UI.Gtk (postGUIAsync)
 import BasicModel
 import qualified DB.Init as DB
 import qualified DB.Types as DB
 
 import qualified Web.Hastodon as Hdon
 
-type TheWorld = World IO IO IORefRunner
-type TheMBox = Mailbox IO IO IORefRunner
+type TheWorld = World IO IO GtkRunner
+type TheMBox = Mailbox IO IO GtkRunner
 
 
 data Unordered a = Add a | Del a | Clear
@@ -69,7 +69,7 @@ data T = T {
 makeLenses ''T
 
 init ::
-    (HasWorld IO IO IORefRunner i, Occasional o) =>
+    (HasWorld IO IO GtkRunner i, Occasional o) =>
     Evolution i o IO T
 init =
   do
@@ -162,8 +162,7 @@ loadSetting model =
     return ()
   where
     postAuth reg =
-        liftIO $ postGUIAsync $
-            mailboxPost (model ^. regMBox) $ Add reg
+        liftIO $ mailboxPost (model ^. regMBox) $ Add reg
 
 getClientInfo :: String -> String -> IO (Maybe Host)
 getClientInfo hostname appname = runMaybeT $ MaybeT (findHost hostname)`mplus` newClient
@@ -233,7 +232,7 @@ requireRange model ((^? _DSSSource) -> Just ds0) rph = fmap (const ()) $ forkIO 
     sts <- either (\s -> error ("requireRange error\n" ++ show s)) return res
     let testNoLeft tgt = not . null $ filter (\st -> Hdon.statusId st == tgt) sts
         noLeft = maybe False testNoLeft (rph ^. rphLower)
-    postGUIAsync $ mailboxPost (model ^. updateRPHMBox) (rph ^. rphId, sts, noLeft)
+    mailboxPost (model ^. updateRPHMBox) (rph ^. rphId, sts, noLeft)
   where
     initialReadDs ds@(DataSource _ DSHome) = Hdon.getHomeTimelineEx q (ds ^. hastodonClient)
     initialReadDs ds = Hdon.getPublicTimelineEx q (ds ^. hastodonClient)
@@ -250,7 +249,7 @@ requireRange model ((^? _DSNSource) -> Just ds0) rph = fmap (const ()) $ forkIO 
     sts <- either (\s -> error ("requireRange error\n" ++ show s)) return res
     let testNoLeft tgt = not . null $ filter (\st -> Hdon.notificationId st == tgt) sts
         noLeft = maybe False testNoLeft (rph ^. rphLower)
-    postGUIAsync $ mailboxPost (model ^. updateRPHNMBox) (rph ^. rphId, sts, noLeft)
+    mailboxPost (model ^. updateRPHNMBox) (rph ^. rphId, sts, noLeft)
   where
     initialReadDs ds@(DataSource _ DSNotification) = Hdon.getNotifications (ds ^. hastodonClient)
     q = catMaybes [

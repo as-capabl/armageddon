@@ -28,7 +28,7 @@ import Control.Arrow.Machine.IORefRunner
 import Control.Concurrent (forkIO, threadDelay, killThread)
 import qualified Control.Concurrent.Chan.Unagi.NoBlocking as Unagi
 
-type TheWorld = World IO IO IORefRunner
+type TheWorld = World IO IO Mg.GtkRunner
 
 
 data PollStrategy = PollIdle Priority | PollTimeout Priority Int

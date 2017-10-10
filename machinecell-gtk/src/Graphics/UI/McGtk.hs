@@ -5,10 +5,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module
     Graphics.UI.McGtk
       (
+        GtkRunner(..),
+
         -- * Event handling
         on,
         Replying(..),
@@ -35,11 +38,26 @@ import Control.Monad.Trans.Control
 import Control.Monad.Base
 import qualified Control.Arrow.Machine as Mc
 import qualified Control.Arrow.Machine.World as Mc
+import qualified Control.Arrow.Machine.IORefRunner as Mc
 import qualified Graphics.UI.Gtk as Gtk
 import Data.IORef
 import Data.Void
+import Data.Proxy
 import Unsafe.Coerce
 
+data GtkRunner (instr :: * -> *) (m :: * -> *) = GtkRunner
+
+instance
+    MonadBaseControl IO m =>
+    Mc.WorldRunner IO m (GtkRunner IO m)
+  where
+    type Ref (GtkRunner IO m) = IORef
+    newRef _ = newIORef
+    refGet _ = readIORef
+    refSet _ = writeIORef
+    refAtomicModify _ = atomicModifyIORef
+
+    nonCallbackRun _ = Gtk.postGUIAsync
 
 
 class
@@ -96,7 +114,7 @@ instance
 
 on ::
     (SignalSource obj arg ret mhnd sig, SignalDefault ret,
-     Mc.WorldRunner IO m (wr IO m), Monad m, MonadIO mhnd) =>
+    Mc.WorldRunner IO m (wr IO m), Monad m, MonadIO mhnd) =>
     obj -> sig -> Mc.ProcessT m (Mc.World IO m wr) (Mc.Event arg)
 on obj sig =
     Mc.listen

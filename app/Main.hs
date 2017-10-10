@@ -56,7 +56,7 @@ import qualified AuthDialog
 
 import Debug.Trace
 
-type TheWorld = World IO IO IORefRunner
+type TheWorld = World IO IO GtkRunner
 
 --
 -- Utility

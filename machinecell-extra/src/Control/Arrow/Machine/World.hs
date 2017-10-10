@@ -77,6 +77,9 @@ class
     refSet :: proxy t -> Ref t a -> a -> instr ()
     refAtomicModify :: proxy t -> Ref t a -> (a -> (a, b)) -> instr b
 
+    nonCallbackRun :: proxy t -> instr () -> instr ()
+    nonCallbackRun _ = id
+
 newRefA ::
     (WorldRunner instr m t, Monad instr, Monad m) =>
     proxy t ->
@@ -518,8 +521,7 @@ mailboxPost mb x =
         Right (l, st) ->
           do
             refSet rr vSt $ Left l
-            st etp
-            return ()
+            nonCallbackRun rr $ st etp >> return ()
 
 {-# INLINE onMailboxPost #-}
 onMailboxPost ::
