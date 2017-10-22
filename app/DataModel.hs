@@ -234,14 +234,13 @@ requireRange model ((^? _DSSSource) -> Just ds0) rph = fmap (const ()) $ forkIO 
         noLeft = maybe False testNoLeft (rph ^. rphLower)
     mailboxPost (model ^. updateRPHMBox) (rph ^. rphId, sts, noLeft)
   where
-    initialReadDs ds@(DataSource _ DSHome) = Hdon.getHomeTimelineEx q (ds ^. hastodonClient)
-    initialReadDs ds = Hdon.getPublicTimelineEx q (ds ^. hastodonClient)
-    q = catMaybes [
-        qMin <$> (rph ^. rphLower),
-        qMax <$> (rph ^. rphUpper)
+    initialReadDs (DataSource _ DSHome) = Hdon.getHomeTimelineWithOption client q
+    initialReadDs _ = Hdon.getPublicTimelineWithOption client q
+    client = (ds0 ^. hastodonClient)
+    q = mconcat $ catMaybes [
+        Hdon.minId <$> (rph ^. rphLower),
+        Hdon.maxId <$> (rph ^. rphUpper)
       ]
-    qMin sId = ("min_id", Just (show sId))
-    qMax sId = ("max_id", Just (show sId))
 
 requireRange model ((^? _DSNSource) -> Just ds0) rph = fmap (const ()) $ forkIO $
   do
@@ -251,13 +250,12 @@ requireRange model ((^? _DSNSource) -> Just ds0) rph = fmap (const ()) $ forkIO 
         noLeft = maybe False testNoLeft (rph ^. rphLower)
     mailboxPost (model ^. updateRPHNMBox) (rph ^. rphId, sts, noLeft)
   where
-    initialReadDs ds@(DataSource _ DSNotification) = Hdon.getNotifications (ds ^. hastodonClient)
-    q = catMaybes [
-        qMin <$> (rph ^. rphLower),
-        qMax <$> (rph ^. rphUpper)
+    initialReadDs ds@(DataSource _ DSNotification) = Hdon.getNotificationsWithOption client q
+    client = ds0 ^. hastodonClient
+    q = mconcat $ catMaybes [
+        Hdon.minId <$> (rph ^. rphLower),
+        Hdon.maxId <$> (rph ^. rphUpper)
       ]
-    qMin sId = ("min_id", Just (show sId))
-    qMax sId = ("max_id", Just (show sId))
 
 onUpdateRange model = proc world ->
   do

@@ -347,7 +347,7 @@ postToot form =
         -- Post it
         lift $ forkIO $
           do
-            r <- Hdon.postStatus content (reg ^. hastodonClient)
+            r <- Hdon.postStatus (reg ^. hastodonClient) content
             print r
             return ()
 

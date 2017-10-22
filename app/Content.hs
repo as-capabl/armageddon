@@ -176,6 +176,7 @@ domifyNotification ::
 domifyNotification doc ntf = runMaybeT $
   do
     ch <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
+    DOM.setId ch $ notificationIdToDomId $ Hdon.notificationId ntf
     DOM.setClassName ch classNotification
 
     divType <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
