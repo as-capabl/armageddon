@@ -76,7 +76,8 @@ instance Hashable Registration
 
 -- Data Source
 data DSKind = DSS DSSKind | DSN DSNKind deriving (Eq, Show)
-data DSSKind = DSHome | DSPublic | DSUserStatus BMText deriving (Eq, Show)
+data DSSKind = DSHome | DSPublic | DSUserStatus Int | DSSearch BMText | DSHashtag BMText
+  deriving (Eq, Show)
 data DSNKind = DSNotification deriving (Eq, Show)
 
 data DataSource' kind = DataSource

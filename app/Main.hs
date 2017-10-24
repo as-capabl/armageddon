@@ -186,6 +186,14 @@ driveDocument model doc = proc world ->
                 -< world
         fire (runMaybeT . requireRangeByElem ds) -< cl
 
+        -- Handle placeholder click.
+        cl2 <- McWeb.onSelector doc
+            (DOM.EventName "click" :: DOM.EventName DOM.Document DOM.MouseEvent)
+            ("div.hdon_username a" :: BMText)
+            (\self -> DOM.returnValue False >> return self)
+                -< world
+        fire $ selUsernameDs (ds ^. dsreg) -< cl2
+
         -- Handle placeholder substitution by the model.
         fire (\(placeId, sts, noLeft) -> replaceWithStatus doc sts placeId noLeft)
             <<< DataModel.onUpdateRange model
@@ -225,6 +233,17 @@ driveDocument model doc = proc world ->
       do
         rph <- MaybeT $ Content.extractRPH doc rphId
         liftIO $ DataModel.requireRange model ds rph
+
+    selUsernameDs reg elem = runMaybeT $
+      do
+        usernameDiv <- MaybeT $ DOM.getParentNode elem
+        mainDiv <- MaybeT $ DOM.getParentNode usernameDiv
+        statusDiv <- MaybeT $ DOM.getParentNode mainDiv
+
+        domId <- DOM.getId (DOM.castToElement statusDiv)
+        statusId <- MaybeT $ return $ domIdToStatusId domId
+
+        liftIO $ DataModel.selUserDSByStatusId model reg statusId
 
 isScrollTop :: DOM.Document -> IO Bool
 isScrollTop doc = fmap (fromMaybe True) $ runMaybeT $
@@ -347,7 +366,7 @@ postToot form =
         -- Post it
         lift $ forkIO $
           do
-            r <- Hdon.postStatus (reg ^. hastodonClient) content
+            r <- Hdon.postStatusWithOption (reg ^. hastodonClient) Hdon.sensitive content
             print r
             return ()
 

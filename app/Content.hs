@@ -82,7 +82,8 @@ initialHtml = TextL.toStrict $ TextL.toLazyText html
         "div.hdon_avatar { float: left; width: 40pt; }\n",
         "div.hdon_avatar img { width: 40pt; height: 40pt; }",
         "div.hdon_status_main { float: left; width: calc(100% - 40pt); }\n",
-        "div.hdon_username { font-weight: bold; }\n",
+        "div.hdon_username a { font-weight: bold; text-decoration: none; color: black; }\n",
+        "div.hdon_username a:hover { color: #303030; }\n",
         "div.hdon_content { margin-left: 5pt }\n",
         "div.hdon_notification { ", styleListItem, " }\n",
         "div.hdon_rph { margin: 12pt 6pt; }\n",
@@ -152,9 +153,20 @@ domifyStatus doc st = runMaybeT $
         ch <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
         DOM.setClassName ch classUsername
 
+        ach <- MaybeT $ DOM.createElement doc (Just "a" :: Maybe Text.Text)
+        let aach = DOM.castToHTMLAnchorElement ach
+        DOM.setHref aach $ Text.pack $ "about://armageddon"
+
         let name = Hdon.accountUsername account
         txt <- MaybeT $ DOM.createTextNode doc name
-        DOM.appendChild ch $ Just txt
+
+        nestElement $ elemTree ch
+          [
+            elemTree ach
+              [
+                elemTree txt []
+              ]
+          ]
 
         return ch
 

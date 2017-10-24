@@ -202,6 +202,14 @@ selDS model ds =
   do
     mailboxPost (model ^. selDSMBox) $ ds
 
+selUserDSByStatusId :: T -> Registration -> Int -> IO ()
+selUserDSByStatusId model reg statusId = fmap (const ()) $ forkIO $
+  do
+    Right st <- Hdon.getStatus (reg ^. hastodonClient) statusId
+    let account = Hdon.statusAccount st
+        accountId = Hdon.accountId account
+    selDS model $ DataSource reg (DSS $ DSUserStatus accountId)
+
 onSelDS :: T -> ProcessT IO TheWorld (Event DataSource)
 onSelDS model = proc world ->
   do
@@ -213,6 +221,7 @@ readDSS ds0 = constructT $
     auto $ (C.catchC (sourceReadDs ds0) (liftIO . printEx)) C.=$= filterUpdateC
   where
     sourceReadDs ds@(DataSource _ DSHome) = Hdon.sourceUserTimeline (ds ^. hastodonClient)
+    sourceReadDs (DataSource _ (DSUserStatus _)) = return ()
     sourceReadDs ds = Hdon.sourcePublicTimeline (ds ^. hastodonClient)
 
     filterUpdateC = C.awaitForever $ \case
@@ -235,6 +244,9 @@ requireRange model ((^? _DSSSource) -> Just ds0) rph = fmap (const ()) $ forkIO 
     mailboxPost (model ^. updateRPHMBox) (rph ^. rphId, sts, noLeft)
   where
     initialReadDs (DataSource _ DSHome) = Hdon.getHomeTimelineWithOption client q
+    initialReadDs (DataSource _ (DSUserStatus userId)) =
+        Hdon.getAccountStatuses client userId
+
     initialReadDs _ = Hdon.getPublicTimelineWithOption client q
     client = (ds0 ^. hastodonClient)
     q = mconcat $ catMaybes [
