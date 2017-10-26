@@ -53,6 +53,7 @@ classAvatar = "hdon_avatar" :: Text.Text
 classStatusMain = "hdon_status_main" :: Text.Text
 classStatusClear = "hdon_status_clear" :: Text.Text
 classUsername = "hdon_username" :: Text.Text
+classCreateAt = "hdon_create_at" :: Text.Text
 classContent = "hdon_content" :: Text.Text
 classNotification = "hdon_notification" :: Text.Text
 classRPH = "hdon_rph" :: Text.Text
@@ -79,12 +80,13 @@ initialHtml = TextL.toStrict $ TextL.toLazyText html
         "p { margin: 0pt 0pt 0pt 0pt; padding: 0pt 0pt 0pt 0pt; }\n",
         "div.hdon_status { ", styleListItem, " }\n",
         "div.hdon_status_clear { clear: both; }\n",
-        "div.hdon_avatar { float: left; width: 40pt; }\n",
-        "div.hdon_avatar img { width: 40pt; height: 40pt; }",
+        "div.hdon_avatar { float: left; width: 40pt }\n",
+        "div.hdon_avatar img { width: 40pt; height: 40pt }",
         "div.hdon_status_main { float: left; width: calc(100% - 40pt); }\n",
-        "div.hdon_username a { font-weight: bold; text-decoration: none; color: black; }\n",
+        "div.hdon_username a { margin-left: 1pt; font-weight: bold; text-decoration: none; color: black; }\n",
         "div.hdon_username a:hover { color: #303030; }\n",
-        "div.hdon_content { margin-left: 5pt }\n",
+        "div.hdon_content { margin-left: 8pt }\n",
+        "div.hdon_create_at { margin-left: 8pt; font-size: 75%; color: #505050; }\n",
         "div.hdon_notification { ", styleListItem, " }\n",
         "div.hdon_rph { margin: 12pt 6pt; }\n",
         "div.hdon_rph a.waiting {}\n",
@@ -113,22 +115,29 @@ domifyStatus doc st = runMaybeT $
     DOM.setId ch (statusIdToDomId $ Hdon.statusId st)
 
     avatarEl <- domifyAvatar
-    DOM.appendChild ch $ Just avatarEl
 
     mainEl <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
     DOM.setClassName mainEl classStatusMain
 
     nameEl <- domifyUsername
-    DOM.appendChild mainEl $ Just nameEl
 
     contEl <- domifyContent
-    DOM.appendChild mainEl $ Just contEl
 
-    DOM.appendChild ch $ Just mainEl
+    dateEl <- domifyCreateAt
 
     clearEl <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
     DOM.setClassName clearEl classStatusClear
-    DOM.appendChild ch $ Just clearEl
+
+    nestElement $
+        elemTree ch [
+            elemTree avatarEl [],
+            elemTree mainEl [
+                elemTree nameEl [],
+                elemTree dateEl [],
+                elemTree contEl []
+              ],
+            elemTree clearEl []
+          ]
 
     return ch
   where
@@ -179,6 +188,17 @@ domifyStatus doc st = runMaybeT $
         -- txt <- MaybeT $ DOM.createTextNode doc content
         -- DOM.appendChild ch $ Just txt
         DOM.setInnerHTML ch $ Just content
+
+        return ch
+
+    domifyCreateAt =
+      do
+        ch <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
+        DOM.setClassName ch classCreateAt
+
+        let str = Hdon.statusCreatedAt st
+        txt <- MaybeT $ DOM.createTextNode doc str
+        DOM.appendChild ch $ Just txt
 
         return ch
 
