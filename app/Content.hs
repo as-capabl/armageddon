@@ -15,6 +15,7 @@ import qualified Data.Text as Text
 import qualified Data.Text.Lazy as TextL
 import qualified Data.Text.Lazy.Builder as TextL
 import Data.Maybe (catMaybes)
+import Data.Char (chr)
 
 import qualified Graphics.UI.Gtk.WebKit.DOM.Document as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.Element as DOM
@@ -53,6 +54,9 @@ classAvatar = "hdon_avatar" :: Text.Text
 classStatusMain = "hdon_status_main" :: Text.Text
 classStatusClear = "hdon_status_clear" :: Text.Text
 classUsername = "hdon_username" :: Text.Text
+classStInfo = "hdon_stinfo" :: Text.Text
+classFavBox = "hdon_favbox" :: Text.Text
+classRebBox = "hdon_rebbox" :: Text.Text
 classCreateAt = "hdon_create_at" :: Text.Text
 classContent = "hdon_content" :: Text.Text
 classNotification = "hdon_notification" :: Text.Text
@@ -79,14 +83,20 @@ initialHtml = TextL.toStrict $ TextL.toLazyText html
       [
         "p { margin: 0pt 0pt 0pt 0pt; padding: 0pt 0pt 0pt 0pt; }\n",
         "div.hdon_status { ", styleListItem, " }\n",
-        "div.hdon_status_clear { clear: both; }\n",
+        "div.hdon_status_clear { float:none !important; clear: both; }\n",
         "div.hdon_avatar { float: left; width: 40pt }\n",
         "div.hdon_avatar img { width: 40pt; height: 40pt }",
         "div.hdon_status_main { float: left; width: calc(100% - 40pt); }\n",
         "div.hdon_username a { margin-left: 1pt; font-weight: bold; text-decoration: none; color: black; }\n",
         "div.hdon_username a:hover { color: #303030; }\n",
         "div.hdon_content { margin-left: 8pt }\n",
-        "div.hdon_create_at { margin-left: 8pt; font-size: 75%; color: #505050; }\n",
+        "div.hdon_stinfo { margin-left: 0pt; margin-top: 4pt; font-size: 70%; }\n",
+        "div.hdon_stinfo div { float: left; }\n",
+        "div.hdon_create_at { margin-left: 8pt; color: #505050; }\n",
+        "div.hdon_favbox {", favImage, infoBoxItem, "color: gray; ", "}\n",
+        "div.hdon_rebbox {", rebImage ,infoBoxItem, "color: gray; ", "}\n",
+        "div.hdon_favbox:hover {border-color: darkgray}\n",
+        "div.hdon_rebbox:hover {border-color: darkgray}\n",
         "div.hdon_notification { ", styleListItem, " }\n",
         "div.hdon_rph { margin: 12pt 6pt; }\n",
         "div.hdon_rph a.waiting {}\n",
@@ -96,9 +106,23 @@ initialHtml = TextL.toStrict $ TextL.toLazyText html
     styleListItem = mconcat
       [
         "margin: 1pt 1pt 1pt 1pt;",
-        "padding: 5pt 5pt 5pt 5pt;",
+        "padding: 5pt 5pt 2pt 5pt;",
         "border: solid thin lightgray"
       ]
+    infoBoxItem = mconcat
+      [
+        "margin-left: 4pt;",
+        "padding-left: 4pt;",
+        "padding-right: 12pt;",
+        "position: relative;",
+        "bottom: 2pt;",
+        "border: solid thin lightgray;",
+        "-webkit-background-size: auto 1.3ex;",
+        "background-position: 90% center;",
+        "background-repeat: no-repeat;"
+      ]
+    favImage = "background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH4QobEBY5g980FwAAAB1pVFh0Q29tbWVudAAAAAAAQ3JlYXRlZCB3aXRoIEdJTVBkLmUHAAABRklEQVRYw8VXuw2FMAxMrEhsxgJITEBNxxR01EyAxAJsRpVXhReiOPEHgUskJ+fz+XCs9958Gc4YY8Zed8g8dH5ad8vNWzZjQFvBPHQqCq22BefxB9C0NBYC42oG4sulAVoNUKsuApCAkFBfBPDENEhaAphA3qA/C4ACIlepFIxLjUEb59F5Dhj4Sv03Ixp7vaNJi7gYkHi5JsJ9LkUUBIZRXOsxlh8LNy4WsN4+YbM5UCkwKAksBcFVeImR6hTEIDhs5PJKoIE6alQQ6T+ixhi8Ne8qI6IykVJOYc1x7TXXW82v2UncK1z4xE4AUgut6YQKCDj0YzrQmJbTuFr8rWTBTbtbbMeAJ1wtnndMF9iuARz113pbG78cCMd1No4V5wpZtvvKdy0kpSeXdFeIz0jBjz3hZTStu9UsKnFuWmRoh/36ef4Dkgb1M6GKHVgAAAAASUVORK5CYII=);"
+    rebImage = "background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH4QobEBcph3MVMgAAAB1pVFh0Q29tbWVudAAAAAAAQ3JlYXRlZCB3aXRoIEdJTVBkLmUHAAAAf0lEQVRYw+3XwQ3AIAiF4QdhWWfw3Bk6rj2Z2KamN/5DcQG+PNCgjTFEnpCk8xCiaF3mgk9MSWbRNXE8ASdn4JYAhfBdbxAAgfCvKU25huvDgLegAAUoQAEKUIDfAYLYhJEEdrtGagveEOkz8ERE1i64Fm5dNms5NYQTZPT3/AJMjyV5V5bxWwAAAABJRU5ErkJggg==);"
 
 getTimelineParent ::
     MonadIO m =>
@@ -123,7 +147,7 @@ domifyStatus doc st = runMaybeT $
 
     contEl <- domifyContent
 
-    dateEl <- domifyCreateAt
+    infoEl <- domifyStInfo
 
     clearEl <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
     DOM.setClassName clearEl classStatusClear
@@ -133,8 +157,8 @@ domifyStatus doc st = runMaybeT $
             elemTree avatarEl [],
             elemTree mainEl [
                 elemTree nameEl [],
-                elemTree dateEl [],
-                elemTree contEl []
+                elemTree contEl [],
+                elemTree infoEl []
               ],
             elemTree clearEl []
           ]
@@ -191,16 +215,42 @@ domifyStatus doc st = runMaybeT $
 
         return ch
 
-    domifyCreateAt =
+    domifyStInfo =
       do
         ch <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
-        DOM.setClassName ch classCreateAt
+        DOM.setClassName ch classStInfo
 
-        let str = Hdon.statusCreatedAt st
-        txt <- MaybeT $ DOM.createTextNode doc str
-        DOM.appendChild ch $ Just txt
+        dateDiv <- textDiv classCreateAt $ Hdon.statusCreatedAt st
+        favDiv <- textDiv classFavBox $ nonzeroText $ Hdon.statusFavouritesCount st
+        rebDiv <- textDiv classRebBox $ nonzeroText $ Hdon.statusReblogsCount st
+
+        clearEl <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
+        DOM.setClassName clearEl classStatusClear
+
+        nestElement $ elemTree ch $
+          [
+            elemTree favDiv [],
+            elemTree rebDiv [],
+            elemTree dateDiv [],
+            elemTree clearEl []
+          ]
 
         return ch
+
+    textDiv cls str =
+      do
+        divEl <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
+        DOM.setClassName divEl cls
+
+        txt <- MaybeT $ DOM.createTextNode doc str
+
+        DOM.appendChild divEl $ Just txt
+
+        return divEl
+
+    nonzeroText i | i == 0 = Text.pack [chr 0x00a0]
+                  | otherwise = Text.pack $ show i
+
 
 domifyNotification ::
     MonadIO m =>
