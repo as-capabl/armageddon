@@ -5,12 +5,16 @@ module
     AuthDB.Init
 where
 
+import Control.Monad (sequence_)
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Writer (execWriterT, tell)
+
 import GHC.Generics (Generic)
 import Database.HDBC.Query.TH (defineTableFromDB)
 import Database.HDBC.Schema.Driver (typeMap)
 import Database.HDBC.Schema.SQLite3 (driverSQLite3)
-import Database.HDBC.Sqlite3 (connectSqlite3)
-import Database.HDBC (runRaw, commit)
+import Database.HDBC.Sqlite3 (Connection, connectSqlite3)
+import Database.HDBC (runRaw, commit, disconnect)
 import Language.Haskell.TH (Q, Dec, runIO)
 import System.FilePath
 import System.Directory
@@ -18,11 +22,10 @@ import System.Directory
 import BasicModel (BMText)
 
 defineTable :: FilePath -> String -> Q [Dec]
-defineTable fileName tableName =
+defineTable filepath tableName =
   do
-    conn <- runIO $ prepareAuth
     defineTableFromDB
-        (return conn)
+        (connectSqlite3 filepath)
         (driverSQLite3 { typeMap = myTypeMap })
         "main" -- schema name, ignored by SQLite
         tableName
@@ -57,3 +60,28 @@ createAuth authFile =
     commit conn
     return conn
 
+defineTypes =
+  do
+    filepath <- runIO $
+      do
+        tmpDir <- getTemporaryDirectory >>= \dir ->
+            return $ dir </> "armageddon"
+        createDirectoryIfMissing True tmpDir
+
+        let filepath = tmpDir </> "auth.splite3"
+        removePathForcibly filepath
+
+        conn <- createAuth filepath
+        disconnect conn
+
+        return filepath
+
+    r <- defineAll filepath ["file", "config", "host", "registration"]
+
+    runIO $ removePathForcibly filepath
+    return r
+  where
+    defineAll filepath l =
+        execWriterT $ sequence_ $ map (liftW . defineTable filepath) l
+    liftW mx =
+        lift mx >>= tell
