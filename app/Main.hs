@@ -49,7 +49,6 @@ import qualified Web.Hastodon as Hdon
 import BasicModel
 import qualified Content
 import qualified DataModel
-import qualified DB
 import qualified Async
 import qualified MainForm
 import qualified AuthDialog

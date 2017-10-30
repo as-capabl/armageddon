@@ -2,7 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 module
-    DB.Init
+    AuthDB.Init
 where
 
 import GHC.Generics (Generic)

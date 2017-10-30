@@ -4,10 +4,10 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 module
-    DB.Types
+    AuthDB.Types
 where
 
-import DB.Init
+import AuthDB.Init
 
 $(defineTable "~/.armageddon/auth.sqlite3" "file")
 $(defineTable "~/.armageddon/auth.sqlite3" "config")

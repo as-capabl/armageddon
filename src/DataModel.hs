@@ -45,8 +45,8 @@ import System.FilePath
 import System.Directory
 
 import BasicModel
-import qualified DB.Init as DB
-import qualified DB.Types as DB
+import qualified AuthDB.Init as AuthDB
+import qualified AuthDB.Types as AuthDB
 
 import qualified Web.Hastodon as Hdon
 
@@ -93,23 +93,23 @@ init =
 getAuthConn :: R.ResourceT IO Connection
 getAuthConn =
   do
-    (_, conn) <- R.allocate DB.prepareAuth disconnect
+    (_, conn) <- R.allocate AuthDB.prepareAuth disconnect
     return conn
 
-dbReg :: Prism' DB.Registration Registration
+dbReg :: Prism' AuthDB.Registration Registration
 dbReg = prism' regTo regFrom
   where
     regTo (Registration hst un tok) =
-        DB.Registration (Just hst) (Just un) (Just tok)
-    regFrom reg@(DB.Registration hst un tok) =
+        AuthDB.Registration (Just hst) (Just un) (Just tok)
+    regFrom reg@(AuthDB.Registration hst un tok) =
         Registration <$> hst <*> un <*> tok
 
-dbHost :: Prism' DB.Host Host
+dbHost :: Prism' AuthDB.Host Host
 dbHost = prism' hostTo hostFrom
   where
     hostTo (Host hn cid cs) =
-        DB.Host (Just hn) (Just cid) (Just cs)
-    hostFrom h@(DB.Host hn cid cs) =
+        AuthDB.Host (Just hn) (Just cid) (Just cs)
+    hostFrom h@(AuthDB.Host hn cid cs) =
         Host <$> hn <*> cid <*> cs
 
 writeReg :: Registration -> IO ()
@@ -124,7 +124,7 @@ readRegs model = constructT $
   do
     conn <- lift $ getAuthConn
     regs <- liftIO $
-        runQuery conn (relationalQuery DB.registration) ()
+        runQuery conn (relationalQuery AuthDB.registration) ()
     forM regs $ \x ->
       do
         mapM_ yield $! x ^? dbReg
@@ -138,7 +138,7 @@ writeHost hst = R.runResourceT $
       do
         runDelete conn `flip` () $ derivedDelete $ \h ->
           do
-            wheres $ h ! DB.hostname' .=. value (Just (hst ^. hostname))
+            wheres $ h ! AuthDB.hostname' .=. value (Just (hst ^. hostname))
             return unitPlaceHolder
         runInsert conn (derivedInsert id') (hst ^. re dbHost)
         commit conn
@@ -150,8 +150,8 @@ findHost hn = R.runResourceT $
     conn <- getAuthConn
     hsts <- liftIO $ runQuery conn `flip` () $ relationalQuery . relation $
       do
-        h <- query DB.host
-        wheres $ h ! DB.hostname' .=. value (Just (Text.pack hn))
+        h <- query AuthDB.host
+        wheres $ h ! AuthDB.hostname' .=. value (Just (Text.pack hn))
         return h
     return $ listToMaybe hsts >>= (^? dbHost)
 
