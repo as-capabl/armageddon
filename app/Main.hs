@@ -179,20 +179,20 @@ driveDocument model doc = proc world ->
         wrSwitchDiff (driveDsSub ds) True -< (world, scr)
 
         -- Handle placeholder click.
-        cl <- McWeb.onSelector doc
-            (DOM.EventName "click" :: DOM.EventName DOM.Document DOM.MouseEvent)
-            ("div.hdon_rph a.waiting" :: BMText)
-            (\self -> DOM.returnValue False >> return self)
-                -< world
-        fire (runMaybeT . requireRangeByElem ds) -< cl
+        clRPH <- onSelectorClick doc "div.hdon_rph a.waiting" -< world
+        fire (runMaybeT . requireRangeByElem ds) -< clRPH
 
-        -- Handle placeholder click.
-        cl2 <- McWeb.onSelector doc
-            (DOM.EventName "click" :: DOM.EventName DOM.Document DOM.MouseEvent)
-            ("div.hdon_username a" :: BMText)
-            (\self -> DOM.returnValue False >> return self)
-                -< world
-        fire $ selUsernameDs (ds ^. dsreg) -< cl2
+        -- Handle user name click.
+        clUsername <- onSelectorClick doc "div.hdon_username a" -< world
+        fire $ selUsernameDs (ds ^. dsreg) -< clUsername
+
+        -- Handle fav.
+        clFav <- onSelectorClick doc "div.hdon_favbox" -< world
+        fire $ favByElem ds -< clFav
+
+        -- Handle fav.
+        clFav <- onSelectorClick doc "div.hdon_rebbox" -< world
+        fire $ rebByElem ds -< clFav
 
         -- Handle placeholder substitution by the model.
         fire (\(placeId, sts, noLeft) -> replaceWithStatus doc sts placeId noLeft)
@@ -201,6 +201,11 @@ driveDocument model doc = proc world ->
 
         fire (\(placeId, ntfs, noLeft) -> replaceWithNotification doc ntfs placeId noLeft)
             <<< DataModel.onUpdateNRange model
+                -< world
+
+        -- Handle status update by the model
+        fire (Content.replaceStatus doc)
+            <<< DataModel.onUpdateStatus model
                 -< world
 
     driveDsSub ds@(DSSSource dss) True = proc world ->
@@ -244,6 +249,30 @@ driveDocument model doc = proc world ->
         statusId <- MaybeT $ return $ domIdToStatusId domId
 
         liftIO $ DataModel.selUserDSByStatusId model reg statusId
+
+    favByElem ds favboxElem = runMaybeT $
+      do
+        stInfoNode <- MaybeT $ DOM.getParentNode favboxElem
+        stMainNode <- MaybeT $ DOM.getParentNode stInfoNode
+        statusNode <- MaybeT $ DOM.getParentNode stMainNode
+        domId <- DOM.getId $ DOM.castToElement statusNode
+        stId <- MaybeT $ return $ domIdToStatusId domId
+        liftIO $ DataModel.sendFav model (ds ^. hastodonClient) stId
+
+    rebByElem ds rebboxElem = runMaybeT $
+      do
+        stInfoNode <- MaybeT $ DOM.getParentNode rebboxElem
+        stMainNode <- MaybeT $ DOM.getParentNode stInfoNode
+        statusNode <- MaybeT $ DOM.getParentNode stMainNode
+        domId <- DOM.getId $ DOM.castToElement statusNode
+        stId <- MaybeT $ return $ domIdToStatusId domId
+        liftIO $ DataModel.sendReblog model (ds ^. hastodonClient) stId
+
+    onSelectorClick doc selector =
+        McWeb.onSelector doc
+            (DOM.EventName "click" :: DOM.EventName DOM.Document DOM.MouseEvent)
+            (selector :: BMText)
+            (\self -> DOM.returnValue False >> return self)
 
 isScrollTop :: DOM.Document -> IO Bool
 isScrollTop doc = fmap (fromMaybe True) $ runMaybeT $

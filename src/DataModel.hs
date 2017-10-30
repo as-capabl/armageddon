@@ -64,6 +64,7 @@ data T = T {
     _regMBox :: TheMBox (Unordered Registration),
     _updateRPHMBox :: TheMBox (BMText, [Hdon.Status], Bool),
     _updateRPHNMBox :: TheMBox (BMText, [Hdon.Notification], Bool),
+    _updateStMBox :: TheMBox Hdon.Status,
     _selDSMBox :: TheMBox DataSource
   }
 makeLenses ''T
@@ -77,10 +78,12 @@ init =
     selDSB <- mailboxNew
     updateRPHB <- mailboxNew
     updateRPHNB <- mailboxNew
+    updateSt <- mailboxNew
     return $ T {
         _regMBox = regB,
         _updateRPHMBox = updateRPHB,
         _updateRPHNMBox = updateRPHNB,
+        _updateStMBox = updateSt,
         _selDSMBox = selDSB
       }
 
@@ -277,3 +280,32 @@ onUpdateNRange model = proc world ->
   do
     onMailboxPost $ model ^. updateRPHNMBox -< world
 
+updateStatus :: T -> Hdon.HastodonClient -> Int -> IO ()
+updateStatus model cli i = fmap (const ()) $ forkIO $
+  do
+    Right st <- Hdon.getStatus cli i
+    mailboxPost (model ^. updateStMBox) st
+    return ()
+
+onUpdateStatus model = proc world ->
+  do
+    onMailboxPost $ model ^. updateStMBox -< world
+
+sendFav :: T -> Hdon.HastodonClient -> Int -> IO ()
+sendFav model cli i = (() <$) $ forkIO $ (() <$) $ runMaybeT $
+  do
+    st <- warnIfFail $ Hdon.postFavorite cli i
+    liftIO $ mailboxPost (model ^. updateStMBox) st
+    return ()
+
+sendReblog :: T -> Hdon.HastodonClient -> Int -> IO ()
+sendReblog model cli i = (() <$) $ forkIO $ (() <$) $ runMaybeT $
+  do
+    st <- warnIfFail $ Hdon.postReblog cli i
+    liftIO $ mailboxPost (model ^. updateStMBox) st
+    return ()
+
+warnIfFail :: Show e => IO (Either e a) -> MaybeT IO a
+warnIfFail m = lift m >>= \case
+    Left err -> lift (print err) >> mzero
+    Right x -> return x

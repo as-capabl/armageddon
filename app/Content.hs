@@ -14,7 +14,7 @@ import qualified Data.Tree as Tree
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as TextL
 import qualified Data.Text.Lazy.Builder as TextL
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, fromMaybe)
 import Data.Char (chr)
 
 import qualified Graphics.UI.Gtk.WebKit.DOM.Document as DOM
@@ -248,8 +248,26 @@ domifyStatus doc st = runMaybeT $
 
         return divEl
 
-    nonzeroText i | i == 0 = Text.pack [chr 0x00a0]
-                  | otherwise = Text.pack $ show i
+    nonzeroText i
+        | i == 0 = Text.pack [chr 0x00a0] -- nbsp
+        | otherwise = Text.pack $ show i
+
+replaceStatus ::
+    MonadIO m =>
+    DOM.Document -> Hdon.Status -> m Bool
+replaceStatus doc st = fmap (fromMaybe False) $ runMaybeT $
+  do
+    liftIO $ print st
+    let domId = statusIdToDomId $ Hdon.statusId st
+    oldElem <- MaybeT $ DOM.getElementById doc domId
+
+    parent <- MaybeT $ DOM.getParentNode oldElem
+    newElem <- MaybeT $ domifyStatus doc st
+    MaybeT $ DOM.replaceChild parent (Just newElem) (Just oldElem)
+    liftIO $ putStrLn "replaced!"
+
+    return True
+
 
 
 domifyNotification ::
