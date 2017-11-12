@@ -5,10 +5,6 @@ module
     AuthDB.Init
 where
 
-import Control.Monad (sequence_)
-import Control.Monad.Trans (lift)
-import Control.Monad.Trans.Writer (execWriterT, tell)
-
 import GHC.Generics (Generic)
 import Database.HDBC.Query.TH (defineTableFromDB)
 import Database.HDBC.Schema.Driver (typeMap)
@@ -20,23 +16,8 @@ import System.FilePath
 import System.Directory
 
 import BasicModel (BMText)
+import DBCommon
 
-defineTable :: FilePath -> String -> Q [Dec]
-defineTable filepath tableName =
-  do
-    defineTableFromDB
-        (connectSqlite3 filepath)
-        (driverSQLite3 { typeMap = myTypeMap })
-        "main" -- schema name, ignored by SQLite
-        tableName
-        [''Show, ''Generic]
-  where
-    myTypeMap =
-      [
-        ("float", [t|Double|]),
-        ("integer", [t|Int|]),
-        ("text", [t|BMText|])
-      ]
 
 prepareAuth =
   do
@@ -68,7 +49,7 @@ defineTypes =
             return $ dir </> "armageddon"
         createDirectoryIfMissing True tmpDir
 
-        let filepath = tmpDir </> "auth.splite3"
+        let filepath = tmpDir </> "cache.splite3"
         removePathForcibly filepath
 
         conn <- createAuth filepath
@@ -80,8 +61,4 @@ defineTypes =
 
     runIO $ removePathForcibly filepath
     return r
-  where
-    defineAll filepath l =
-        execWriterT $ sequence_ $ map (liftW . defineTable filepath) l
-    liftW mx =
-        lift mx >>= tell
+
