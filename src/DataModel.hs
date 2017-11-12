@@ -27,7 +27,6 @@ import Control.Arrow.Machine
 import Control.Arrow.Machine.World
 import Control.Arrow.Machine.IORefRunner
 import Control.Arrow.Machine.ConduitAdaptor
-import Graphics.UI.McGtk (GtkRunner)
 
 import qualified Data.Text as Text
 import Data.Maybe (listToMaybe, catMaybes)
@@ -50,8 +49,8 @@ import qualified AuthDB.Types as AuthDB
 
 import qualified Web.Hastodon as Hdon
 
-type TheWorld = World IO IO GtkRunner
-type TheMBox = Mailbox IO IO GtkRunner
+type TheWorld runner = World IO IO runner
+type TheMBox runner = Mailbox IO IO runner
 
 
 data Unordered a = Add a | Del a | Clear
@@ -60,18 +59,18 @@ makePrisms ''Unordered
 --
 -- Data model type
 --
-data T = T {
-    _regMBox :: TheMBox (Unordered Registration),
-    _updateRPHMBox :: TheMBox (BMText, [Hdon.Status], Bool),
-    _updateRPHNMBox :: TheMBox (BMText, [Hdon.Notification], Bool),
-    _updateStMBox :: TheMBox Hdon.Status,
-    _selDSMBox :: TheMBox DataSource
+data T runner = T {
+    _regMBox :: TheMBox runner (Unordered Registration),
+    _updateRPHMBox :: TheMBox runner (BMText, [Hdon.Status], Bool),
+    _updateRPHNMBox :: TheMBox runner (BMText, [Hdon.Notification], Bool),
+    _updateStMBox :: TheMBox runner Hdon.Status,
+    _selDSMBox :: TheMBox runner DataSource
   }
 makeLenses ''T
 
 init ::
-    (HasWorld IO IO GtkRunner i, Occasional o) =>
-    Evolution i o IO T
+    (WorldRunner IO IO (runner IO IO), HasWorld IO IO runner i, Occasional o) =>
+    Evolution i o IO (T runner)
 init =
   do
     regB <- mailboxNew
@@ -119,7 +118,7 @@ writeReg reg = R.runResourceT $
     lift $ runInsert conn (derivedInsert id') (reg ^. re dbReg)
     lift $ commit conn
 
-readRegs :: T -> ProcessT (R.ResourceT IO) (Event ()) (Event Registration)
+readRegs :: T runner -> ProcessT (R.ResourceT IO) (Event ()) (Event Registration)
 readRegs model = constructT $
   do
     conn <- lift $ getAuthConn
@@ -158,7 +157,7 @@ findHost hn = R.runResourceT $
 --
 -- Accessors
 --
-loadSetting :: T -> IO ()
+loadSetting :: WorldRunner IO IO (runner IO IO) => T runner -> IO ()
 loadSetting model =
   do
     forkIO $ R.runResourceT $ runT_ (readRegs model >>> fire postAuth) (repeat ())
@@ -187,25 +186,30 @@ getClientInfo hostname appname = runMaybeT $ MaybeT (findHost hostname)`mplus` n
           in
             Just $ Host hn cid cs
 
-addRegistration :: T -> Registration -> IO ()
+addRegistration :: WorldRunner IO IO (runner IO IO) => T runner -> Registration -> IO ()
 addRegistration model reg =
   do
     writeReg reg
     mailboxPost (model ^. regMBox) $ Add reg
 
 onAddReg ::
-    T -> ProcessT IO TheWorld (Event Registration)
+    WorldRunner IO IO (runner IO IO) =>
+    T runner -> ProcessT IO (TheWorld runner) (Event Registration)
 onAddReg model = proc world ->
   do
     ureg <- onMailboxPost $ model ^. regMBox -< world
     returnA -< filterJust $ (^? _Add) <$> ureg
 
-selDS :: T -> DataSource -> IO ()
+selDS ::
+    WorldRunner IO IO (runner IO IO) =>
+    T runner -> DataSource -> IO ()
 selDS model ds =
   do
     mailboxPost (model ^. selDSMBox) $ ds
 
-selUserDSByStatusId :: T -> Registration -> Int -> IO ()
+selUserDSByStatusId ::
+    WorldRunner IO IO (runner IO IO) =>
+    T runner -> Registration -> Int -> IO ()
 selUserDSByStatusId model reg statusId = fmap (const ()) $ forkIO $
   do
     Right st <- Hdon.getStatus (reg ^. hastodonClient) statusId
@@ -213,7 +217,9 @@ selUserDSByStatusId model reg statusId = fmap (const ()) $ forkIO $
         accountId = Hdon.accountId account
     selDS model $ DataSource reg (DSS $ DSUserStatus accountId)
 
-onSelDS :: T -> ProcessT IO TheWorld (Event DataSource)
+onSelDS ::
+    WorldRunner IO IO (runner IO IO) =>
+    T runner -> ProcessT IO (TheWorld runner) (Event DataSource)
 onSelDS model = proc world ->
   do
     onMailboxPost $ model ^. selDSMBox -< world
@@ -237,7 +243,9 @@ readDSS ds0 = constructT $
 readDSN :: DataSource' DSNKind -> ProcessT (R.ResourceT IO) (Event ()) (Event Hdon.Notification)
 readDSN ds0 = stopped
 
-requireRange :: T -> DataSource -> RPH -> IO ()
+requireRange ::
+    WorldRunner IO IO (runner IO IO) =>
+    T runner -> DataSource -> RPH -> IO ()
 requireRange model ((^? _DSSSource) -> Just ds0) rph = fmap (const ()) $ forkIO $
   do
     res <- initialReadDs ds0
@@ -280,7 +288,9 @@ onUpdateNRange model = proc world ->
   do
     onMailboxPost $ model ^. updateRPHNMBox -< world
 
-updateStatus :: T -> Hdon.HastodonClient -> Int -> IO ()
+updateStatus ::
+    WorldRunner IO IO (runner IO IO) =>
+    T runner -> Hdon.HastodonClient -> Int -> IO ()
 updateStatus model cli i = fmap (const ()) $ forkIO $
   do
     Right st <- Hdon.getStatus cli i
@@ -291,14 +301,18 @@ onUpdateStatus model = proc world ->
   do
     onMailboxPost $ model ^. updateStMBox -< world
 
-sendFav :: T -> Hdon.HastodonClient -> Int -> IO ()
+sendFav ::
+    WorldRunner IO IO (runner IO IO) =>
+    T runner -> Hdon.HastodonClient -> Int -> IO ()
 sendFav model cli i = (() <$) $ forkIO $ (() <$) $ runMaybeT $
   do
     st <- warnIfFail $ Hdon.postFavorite cli i
     liftIO $ mailboxPost (model ^. updateStMBox) st
     return ()
 
-sendReblog :: T -> Hdon.HastodonClient -> Int -> IO ()
+sendReblog ::
+    WorldRunner IO IO (runner IO IO) =>
+    T runner -> Hdon.HastodonClient -> Int -> IO ()
 sendReblog model cli i = (() <$) $ forkIO $ (() <$) $ runMaybeT $
   do
     st <- warnIfFail $ Hdon.postReblog cli i

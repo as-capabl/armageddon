@@ -56,6 +56,7 @@ import qualified AuthDialog
 import Debug.Trace
 
 type TheWorld = World IO IO GtkRunner
+type TheModel = DataModel.T GtkRunner
 
 --
 -- Utility
@@ -87,7 +88,7 @@ main = gtkReactimate $ evolve $
     finishWith $ driveMainForm model mf
 
 
-authNew :: DataModel.T -> ProcessT IO (TheWorld, Event ()) (Event Void)
+authNew :: TheModel -> ProcessT IO (TheWorld, Event ()) (Event Void)
 authNew model = evolve $ forever $
   do
     wSwitchAfter $ muted *** id
@@ -106,7 +107,7 @@ authNew model = evolve $ forever $
         liftIO $ DataModel.addRegistration model reg
 
 
-driveMainForm :: DataModel.T -> MainForm.T -> ProcessT IO TheWorld (Event Void)
+driveMainForm :: TheModel -> MainForm.T -> ProcessT IO TheWorld (Event Void)
 driveMainForm model mf = proc world ->
   do
     fire0 (DataModel.loadSetting model) <<< onActivation -< world
@@ -155,7 +156,7 @@ driveMainForm model mf = proc world ->
 
 -- Handle DOM event here.
 driveDocument ::
-    DataModel.T -> DOM.Document -> ProcessT IO TheWorld (Event Void)
+    TheModel -> DOM.Document -> ProcessT IO TheWorld (Event Void)
 driveDocument model doc = proc world ->
   do
     -- Data source handling
