@@ -46,6 +46,8 @@ import System.Directory
 import BasicModel
 import qualified AuthDB.Init as AuthDB
 import qualified AuthDB.Types as AuthDB
+import qualified CacheDB.Init as CacheDB
+import qualified CacheDB.Types as CacheDB
 
 import qualified Web.Hastodon as Hdon
 
@@ -110,6 +112,13 @@ dbHost = prism' hostTo hostFrom
         AuthDB.Host (Just hn) (Just cid) (Just cs)
     hostFrom h@(AuthDB.Host hn cid cs) =
         Host <$> hn <*> cid <*> cs
+
+cacheStatus :: Prism' CacheDB.Status Hdon.Status
+cacheStatus = prism' statusTo statusFrom
+  where
+    statusTo (Hdon.Status sId sUri sUrl sAccount sInReplyToId sInReplyToAccountId sReblog sContent sCreatedAt sReblogsCount sFavouritesCount sReblogged sFavourited sSensitive sSpoilerText sVisibility _ _ _ _) =
+        CacheDB.Status (Just sId) (Just sUri) (Just sUrl) (Just sAccount) (Just sInReplyToId) (Just sInReplyToAccountId) (Just sReblog) (Just sContent) (Just sCreatedAt) (Just sReblogsCount) (Just sFavouritesCount) (Just sReblogged) (Just sFavourited) (Just sSensitive) (Just sSpoilerText) (Just sVisibility) Nothing
+    statusFrom (CacheDB.Status sId sUri sUrl sAccount sInReplyToId sInReplyToAccountId sReblog sContent sCreatedAt sReblogsCount sFavouritesCount sReblogged sFavourited sSensitive sSpoilerText sVisibility _) = Hdon.Status <$> sId <*> sUri <*> sUrl <*> sAccount <*> sInReplyToId <*> sInReplyToAccountId <*> sReblog <*> sContent <*> sCreatedAt <*> sReblogsCount <*> sFavouritesCount <*> sReblogged <*> sFavourited <*> sSensitive <*> sSpoilerText <*> sVisibility <*> [] <*> [] <*> [] <*> Nothing
 
 writeReg :: Registration -> IO ()
 writeReg reg = R.runResourceT $
