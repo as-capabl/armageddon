@@ -22,7 +22,12 @@ import qualified Web.Hastodon as Hdon
 
 type BMText = Text.Text
 
+-- Qualified by host
+type Hostname = BMText
 
+data QHost a = QHost Hostname a
+
+-- HastodonClient
 makeClassyFor
     "HasHastodonClient"
     "hastodonClient"
@@ -40,7 +45,7 @@ makeLenses ''Config
 -- Host
 data Host = Host
   {
-    _hostname :: BMText,
+    _hostname :: Hostname,
     _clientId :: BMText,
     _clientSecret :: BMText
   }
@@ -51,7 +56,7 @@ makeLenses ''Host
 -- Registration
 data Registration = Registration
   {
-    _registrationHost :: BMText,
+    _registrationHost :: Hostname,
     _registrationToken :: BMText,
     _username :: BMText
   }

@@ -113,12 +113,29 @@ dbHost = prism' hostTo hostFrom
     hostFrom h@(AuthDB.Host hn cid cs) =
         Host <$> hn <*> cid <*> cs
 
-cacheStatus :: Prism' CacheDB.Status Hdon.Status
+cacheStatus :: Prism' CacheDB.Status (QHost Hdon.Status)
 cacheStatus = prism' statusTo statusFrom
   where
-    statusTo (Hdon.Status sId sUri sUrl sAccount sInReplyToId sInReplyToAccountId sReblog sContent sCreatedAt sReblogsCount sFavouritesCount sReblogged sFavourited sSensitive sSpoilerText sVisibility _ _ _ _) =
-        CacheDB.Status (Just sId) (Just sUri) (Just sUrl) (Just sAccount) (Just sInReplyToId) (Just sInReplyToAccountId) (Just sReblog) (Just sContent) (Just sCreatedAt) (Just sReblogsCount) (Just sFavouritesCount) (Just sReblogged) (Just sFavourited) (Just sSensitive) (Just sSpoilerText) (Just sVisibility) Nothing
-    statusFrom (CacheDB.Status sId sUri sUrl sAccount sInReplyToId sInReplyToAccountId sReblog sContent sCreatedAt sReblogsCount sFavouritesCount sReblogged sFavourited sSensitive sSpoilerText sVisibility _) = Hdon.Status <$> sId <*> sUri <*> sUrl <*> sAccount <*> sInReplyToId <*> sInReplyToAccountId <*> sReblog <*> sContent <*> sCreatedAt <*> sReblogsCount <*> sFavouritesCount <*> sReblogged <*> sFavourited <*> sSensitive <*> sSpoilerText <*> sVisibility <*> [] <*> [] <*> [] <*> Nothing
+    statusTo (QHost sHostname (Hdon.Status sId sUri sUrl sAccount sInReplyToId sInReplyToAccountId
+              sReblog sContent sCreatedAt sReblogsCount sFavouritesCount
+              sReblogged sFavourited sSensitive sSpoilerText sVisibility _ _ _ _)) =
+        CacheDB.Status
+            (Just sId) (toS sUri) (toS sUrl) (Just $ Hdon.accountId sAccount) sInReplyToId
+            sInReplyToAccountId (Hdon.statusId <$> sReblog) (toS sContent) (toS sCreatedAt)
+            (Just sReblogsCount) (Just sFavouritesCount) (toB sReblogged) (toB sFavourited)
+            (toB sSensitive) (toS sSpoilerText) (toS sVisibility) (Just sHostname)
+            {-
+    statusFrom (CacheDB.Status sId sUri sUrl sAccount sInReplyToId sInReplyToAccountId
+                sReblog sContent sCreatedAt sReblogsCount sFavouritesCount sReblogged
+                sFavourited sSensitive sSpoilerText sVisibility _) =
+        Hdon.Status <$> sId <*> sUri <*> sUrl <*> sAccount <*> sInReplyToId <*>
+            sInReplyToAccountId <*> sReblog <*> sContent <*> sCreatedAt <*> sReblogsCount <*>
+            sFavouritesCount <*> sReblogged <*> sFavourited <*> sSensitive <*> sSpoilerText <*>
+            sVisibility <*> [] <*> [] <*> [] <*> Nothing
+-}
+    statusFrom = undefined
+    toS = Just . Text.pack
+    toB = fmap $ \x -> if x then 1 else 0
 
 writeReg :: Registration -> IO ()
 writeReg reg = R.runResourceT $

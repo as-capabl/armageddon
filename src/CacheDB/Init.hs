@@ -50,11 +50,11 @@ createCache cacheFile =
         "statusSensitive integer," ++ -- boolean
         "statusSpoilerText text," ++
         "statusVisibility text," ++
-        "statusHostId integer," ++
         -- "statusMediaAttachments [Attachment]," ++
         -- "statusMentions [Mention]," ++
         -- "statusTags [Tag]," ++
         -- "statusApplication Maybe Application" ++
+        "statusHostId integer," ++
         "primary key(statusId, statusHostId));"
     commit conn
     return conn
