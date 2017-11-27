@@ -298,6 +298,7 @@ recurseOnEnv fin env p0 etp0 =
         p' <- runBody p0 [etp0]
         st <- lift $ embed (recurseOnEnv fin env p')
         lift $ refSetA refrun (envGetState env) $ Right ([], st)
+
     runBody p1 etps =
       do
         p' <- execStateT `flip` p1 $ forM_ etps $ \etp ->
@@ -315,6 +316,7 @@ recurseOnEnv fin env p0 etp0 =
             Left l -> (Left [], runBody p' $ reverse l)
             Right _ -> error "Internal error at World.hs l302"
         next
+
     runFin =
       do
         cnt' <- liftBase $ refAtomicModify refrun (envGetRootCount env) (\(!cnt) -> (cnt-1, cnt-1))
@@ -514,14 +516,14 @@ mailboxPost mb x =
     let rr = Proxy :: Proxy (wr instr m)
         etp = (mbGetID mb, unsafeCoerce x)
         vSt = mbGetRef mb
-    eSt <- refGet rr vSt
-    case eSt
-      of
-        Left l -> refSet rr vSt $ Left (etp : l)
+    r <- refAtomicModify rr vSt $ \case
+        Left l -> (Left (etp:l), Nothing)
         Right (l, st) ->
-          do
-            refSet rr vSt $ Left l
-            nonCallbackRun rr $ st etp >> return ()
+            let x:xs = reverse (etp:l)
+              in
+                (Left (reverse xs), Just (st, x))
+    maybe (return ()) `flip` r $ \(st, x) ->
+        nonCallbackRun rr $ st x >> return ()
 
 {-# INLINE onMailboxPost #-}
 onMailboxPost ::

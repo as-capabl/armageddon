@@ -281,16 +281,24 @@ isScrollTop doc = fmap (fromMaybe True) $ runMaybeT $
     pos <- DOM.getScrollTop body
     return $ pos == 0
 
+runResourceWithMailbox ::
+    ProcessT (ResourceT IO) (Event ()) (Event a) ->
+    ProcessT IO TheWorld (Event a)
+runResourceWithMailbox p = evolve $
+  do
+    box <- mailboxNew
+    liftIO $ forkIO $ runResourceT $
+      do
+        runT_ (p >>> fire (liftIO . mailboxPost box)) (repeat ())
+    wFinishWith $ onMailboxPost box
+
 streamStatuses ::
     DOM.Document ->
     DataSource' DSSKind ->
     ProcessT IO TheWorld (Event Void)
 streamStatuses doc dss = proc world ->
   do
-    sts <- Async.runResource
-        (Async.PollTimeout 100000 priorityDefaultIdle)
-        (DataModel.readDSS dss)
-            -< world
+    sts <- runResourceWithMailbox (DataModel.readDSS dss) -< world
     muted <<< fire (prependStatus doc) -< sts
 
 streamNotifications ::
@@ -299,10 +307,7 @@ streamNotifications ::
     ProcessT IO TheWorld (Event Void)
 streamNotifications doc dsn = proc world ->
   do
-    sts <- Async.runResource
-        (Async.PollTimeout 100000 priorityDefaultIdle)
-        (DataModel.readDSN dsn)
-            -< world
+    sts <- runResourceWithMailbox (DataModel.readDSN dsn) -< world
     muted <<< fire (prependNotification doc) -< sts
 
 clearWebView doc = runMaybeT go >> return ()
