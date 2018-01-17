@@ -71,6 +71,8 @@ library
                      , DBCommon
                      , AuthDB.Init
                      , AuthDB.Types
+                     , CacheDB.Init
+                     , CacheDB.Types
 
   build-depends:       base
                      , template-haskell
@@ -95,6 +97,7 @@ library
                      , directory
                      , filepath
                      , filelock
+                     , time
 
                      , Hastodon
 

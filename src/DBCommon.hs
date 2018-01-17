@@ -8,6 +8,7 @@ where
 import Control.Monad (sequence_)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Writer (execWriterT, tell)
+import Data.Int
 
 import GHC.Generics (Generic)
 import Database.HDBC.Query.TH (defineTableFromDB)
@@ -34,7 +35,7 @@ defineTable filepath tableName =
     myTypeMap =
       [
         ("float", [t|Double|]),
-        ("integer", [t|Int|]),
+        ("integer", [t|Int64|]),
         ("text", [t|BMText|])
       ]
 

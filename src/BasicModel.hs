@@ -17,12 +17,20 @@ import qualified Data.Text as Text
 import qualified Data.Text.Read as Text
 import GHC.Generics (Generic)
 import Data.Hashable (Hashable)
+import Data.Int (Int64)
+import Data.Time.Clock
+import Data.Time.Clock.POSIX
 
 import qualified Web.Hastodon as Hdon
 
 type BMText = Text.Text
 
+-- Qualified by host
+type Hostname = BMText
 
+data QHost a = QHost Hostname a
+
+-- HastodonClient
 makeClassyFor
     "HasHastodonClient"
     "hastodonClient"
@@ -37,10 +45,24 @@ data Config = Config
 
 makeLenses ''Config
 
+-- Time Format(depends on mastodon)
+-- ex) 2017-10-28T07:06:42.350Z
+isoTimeFormat :: String
+isoTimeFormat = "%FT%H:%M:%S%Q%Z"
+
+type DBTime = Int64 -- milliseconds
+dbTimeCoeff = 1000
+
+toDBTime :: UTCTime -> DBTime
+toDBTime = truncate . (*dbTimeCoeff) . utcTimeToPOSIXSeconds
+
+fromDBTime :: DBTime -> UTCTime
+fromDBTime = posixSecondsToUTCTime . (/dbTimeCoeff) . fromIntegral
+
 -- Host
 data Host = Host
   {
-    _hostname :: BMText,
+    _hostname :: Hostname,
     _clientId :: BMText,
     _clientSecret :: BMText
   }
@@ -51,7 +73,7 @@ makeLenses ''Host
 -- Registration
 data Registration = Registration
   {
-    _registrationHost :: BMText,
+    _registrationHost :: Hostname,
     _registrationToken :: BMText,
     _username :: BMText
   }
@@ -75,10 +97,10 @@ instance
 instance Hashable Registration
 
 -- Data Source
-data DSKind = DSS DSSKind | DSN DSNKind deriving (Eq, Show)
+data DSKind = DSS DSSKind | DSN DSNKind deriving (Eq, Show, Read)
 data DSSKind = DSHome | DSPublic | DSUserStatus Int | DSSearch BMText | DSHashtag BMText
-  deriving (Eq, Show)
-data DSNKind = DSNotification deriving (Eq, Show)
+  deriving (Eq, Show, Read)
+data DSNKind = DSNotification deriving (Eq, Show, Read)
 
 data DataSource' kind = DataSource
   {
@@ -117,6 +139,10 @@ _DSNSource = prism' fromDSN toDSN
 pattern DSNSource x <- ((^? _DSNSource) -> Just x)
   where
     DSNSource x = x ^. re _DSNSource
+
+isCachableDS :: DSKind -> Bool
+isCachableDS (DSS DSHome) = True
+isCachableDS _ = False
 
 -- Range Placeholder
 data RPH = RPH

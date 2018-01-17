@@ -22,6 +22,7 @@ import DBCommon
 prepareAuth =
   do
     stgDir <- getAppUserDataDirectory "armageddon"
+    createDirectoryIfMissing True stgDir
     let authFile = stgDir </> "auth.splite3"
 
     fileEx <- doesFileExist authFile
@@ -34,10 +35,10 @@ prepareAuth =
 createAuth authFile =
   do
     conn <- connectSqlite3 authFile
-    runRaw conn "CREATE TABLE file(fileVersion integer, fileKind text)"
-    runRaw conn "CREATE TABLE config(configDefaultClientName text)"
-    runRaw conn "CREATE TABLE host(hostName text, hostClientId text, hostClientSecret text);"
-    runRaw conn "CREATE TABLE registration(registrationHost text, registrationToken text, registrationUser text);"
+    runRaw conn "CREATE TABLE file(fileVersion integer primary key, fileKind text);"
+    runRaw conn "CREATE TABLE config(configDefaultClientName text primary key);"
+    runRaw conn "CREATE TABLE host(hostName text primary key, hostClientId text, hostClientSecret text);"
+    runRaw conn "CREATE TABLE registration(registrationHost text, registrationToken text, registrationUser text, primary key(registrationHost, registrationUser));"
     commit conn
     return conn
 

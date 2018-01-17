@@ -6,6 +6,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE TupleSections #-}
 
 -- Global event
 module
@@ -17,7 +18,7 @@ import Control.Category
 import Control.Arrow
 import Control.Lens hiding (set)
 import Control.Concurrent (forkIO)
-import Control.Monad (forM, mzero, mplus)
+import Control.Monad (forM, mzero, mplus, when)
 import Control.Monad.Trans (lift, liftIO)
 import Control.Monad.Trans.Maybe
 import Control.Exception (bracket)
@@ -30,6 +31,8 @@ import Control.Arrow.Machine.ConduitAdaptor
 
 import qualified Data.Text as Text
 import Data.Maybe (listToMaybe, catMaybes)
+import Data.List (sortOn, nubBy)
+import Data.Int (Int64)
 
 import qualified Data.Conduit as C
 import qualified Data.Conduit.List as C
@@ -42,10 +45,13 @@ import Database.HDBC.Query.TH
 import Database.HDBC.Record
 import System.FilePath
 import System.Directory
+import Data.Time.Format
 
 import BasicModel
 import qualified AuthDB.Init as AuthDB
 import qualified AuthDB.Types as AuthDB
+import qualified CacheDB.Init as CacheDB
+import qualified CacheDB.Types as CacheDB
 
 import qualified Web.Hastodon as Hdon
 
@@ -95,6 +101,12 @@ getAuthConn =
     (_, conn) <- R.allocate AuthDB.prepareAuth disconnect
     return conn
 
+getCacheConn :: R.ResourceT IO Connection
+getCacheConn =
+  do
+    (_, conn) <- R.allocate CacheDB.prepareCache disconnect
+    return conn
+
 dbReg :: Prism' AuthDB.Registration Registration
 dbReg = prism' regTo regFrom
   where
@@ -111,6 +123,118 @@ dbHost = prism' hostTo hostFrom
     hostFrom h@(AuthDB.Host hn cid cs) =
         Host <$> hn <*> cid <*> cs
 
+type HostCacheId = Int
+chdbAccount :: Prism' CacheDB.Account (Hdon.Account, HostCacheId)
+chdbAccount = prism' accountTo accountFrom
+  where
+    accountTo (Hdon.Account {..}, hostId) =
+        CacheDB.Account
+            (toI accountId) (toS accountUsername) (toS accountAcct)
+            (toS accountDisplayName) (toB $ Just accountLocked) (toTime accountCreatedAt)
+            (toI accountFollowersCount) (toI accountFollowingCount)
+            (toI accountStatusesCount) (toS accountNote)
+            (toS accountUrl) (toS accountAvatar) (toS accountAvatarStatic)
+            (toS accountHeader) (toS accountHeaderStatic) (toI hostId)
+
+    accountFrom (CacheDB.Account {..}) =
+        (,) <$>
+            (Hdon.Account <$>
+                fromI accountid <*>
+                fromS accountusername <*>
+                fromS accountacct <*>
+                fromS accountdisplayname <*>
+                fromB' accountlocked <*>
+                fromTime accountcreatedat <*>
+                fromI accountfollowerscount <*>
+                fromI accountfollowingcount <*>
+                fromI accountstatusescount <*>
+                fromS accountnote <*>
+                fromS accounturl <*>
+                fromS accountavatar <*>
+                fromS accountavatarstatic <*>
+                fromS accountheader <*>
+                fromS accountheaderstatic) <*>
+            fromI accounthostid
+    toI = Just . fromIntegral
+    fromI = fmap fromIntegral
+    toS = Just . Text.pack
+    fromS = fmap Text.unpack
+    toTime str = toDBTime <$> parseTimeM True defaultTimeLocale isoTimeFormat str
+    fromTime = fmap (formatTime defaultTimeLocale isoTimeFormat . fromDBTime)
+    toB = fmap toB'
+    toB' x = if x then 1 else 0
+    -- fromB = pure . fromB'
+    fromB' = fmap (/= 0)
+
+chdbStatus ::
+    Prism'
+        (CacheDB.Status, CacheDB.Account, Maybe (CacheDB.Status, CacheDB.Account))
+        (Hdon.Status, HostCacheId, Maybe DSKind)
+chdbStatus = prism' statusTo statusFrom
+  where
+    statusTo (Hdon.Status {..}, hostId, dsKind) = (st, acc, rebl)
+      where
+        st = CacheDB.Status
+            (toI statusId) (toS statusUri) (toS statusUrl)
+            (toI $ Hdon.accountId statusAccount) (statusInReplyToId >>= toI)
+            (statusInReplyToAccountId >>= toI) (fmap Hdon.statusId statusReblog >>= toI)
+            (toS statusContent) (toTime statusCreatedAt)
+            (toI statusReblogsCount) (toI statusFavouritesCount)
+            (toB statusReblogged) (toB statusFavourited)
+            (toB statusSensitive) (toS statusSpoilerText) (toS statusVisibility)
+            (toI hostId)
+            (Text.pack . show <$> dsKind)
+        acc =
+            (statusAccount, hostId) ^. re chdbAccount
+        rebl =
+          do
+            x <- statusReblog
+            let (s, a, _) = (x, hostId, Nothing) ^. re chdbStatus
+            return (s, a)
+
+    statusFrom (CacheDB.Status sId sUri sUrl sAccount sInReplyToId sInReplyToAccountId
+            sReblog sContent sCreatedAt sReblogsCount sFavouritesCount sReblogged
+            sFavourited sSensitive sSpoilerText sVisibility sHostId sDsKind,
+        acc, rebl) =
+        (,,) <$>
+            (Hdon.Status <$>
+                fromI sId <*>
+                fromS sUri <*>
+                fromS sUrl <*>
+                (fst <$> (acc ^? chdbAccount)) <*>
+                (pure $ fromI sInReplyToId) <*>
+                (pure $ fromI sInReplyToAccountId) <*>
+                (pure $
+                  do
+                    (s, a) <- rebl
+                    (chs, _, _) <- (s, a, Nothing) ^? chdbStatus
+                    return chs) <*>
+                fromS sContent <*>
+                fromTime sCreatedAt <*>
+                fromI sReblogsCount <*>
+                fromI sFavouritesCount <*>
+                fromB sReblogged <*>
+                fromB sFavourited <*>
+                fromB sSensitive <*>
+                fromS sSpoilerText <*>
+                fromS sVisibility <*>
+                pure [] <*>
+                pure [] <*>
+                pure [] <*>
+                pure Nothing) <*>
+            fromI sHostId <*> (pure $ sDsKind >>= (^? _Show) . Text.unpack)
+
+    toI = Just . fromIntegral
+    fromI = fmap fromIntegral
+    toS = Just . Text.pack
+    fromS = fmap Text.unpack
+    toTime str = toDBTime <$> parseTimeM True defaultTimeLocale isoTimeFormat str
+    fromTime = fmap (formatTime defaultTimeLocale isoTimeFormat . fromDBTime)
+    toB = fmap toB'
+    toB' x = if x then 1 else 0
+    fromB = pure . fromB'
+    fromB' = fmap (/= 0)
+
 writeReg :: Registration -> IO ()
 writeReg reg = R.runResourceT $
   do
@@ -124,6 +248,7 @@ readRegs model = constructT $
     conn <- lift $ getAuthConn
     regs <- liftIO $
         runQuery conn (relationalQuery AuthDB.registration) ()
+    liftIO $ commit conn
     forM regs $ \x ->
       do
         mapM_ yield $! x ^? dbReg
@@ -153,6 +278,114 @@ findHost hn = R.runResourceT $
         wheres $ h ! AuthDB.hostname' .=. value (Just (Text.pack hn))
         return h
     return $ listToMaybe hsts >>= (^? dbHost)
+
+writeStatusCache :: Hostname -> DSKind -> [Hdon.Status] -> IO ()
+writeStatusCache hn dsKind sts = when (isCachableDS dsKind) $ R.runResourceT $
+  do
+    conn <- getCacheConn
+
+    -- Get or register host id.
+    hstGot <- getHost conn
+    hst <- maybe (writeHostAndGetId conn) return hstGot
+
+    -- Write
+    (addSts, addAccs, updAccs) <- splitSts conn hst
+    liftIO $
+      do
+        mapM_ (runInsert conn (derivedInsert id')) addSts
+        mapM_ (runInsert conn (derivedInsert id')) addAccs
+        commit conn
+
+  where
+    getHost conn = liftIO $
+      do
+        hs <- runQuery conn `flip` () $ relationalQuery . relation $
+          do
+            h <- query CacheDB.host
+            wheres $ h ! CacheDB.hostname' .=. value (Just hn)
+            return h
+        return $ case hs
+          of
+            (x:_) -> fromIntegral <$> CacheDB.hostid x
+            _ -> Nothing
+
+    writeHostAndGetId conn = liftIO $
+      do
+        h <- runInsert conn `flip` () $ derivedInsertValue $
+          do
+            -- Primary key is auto set and `runInsert` returns it.
+            CacheDB.hostname' <-# value (Just hn)
+            return unitPlaceHolder
+        return $ fromIntegral h
+
+
+    splitSts conn hostId = liftIO $
+      do
+        let spl st = (st, hostId, Just dsKind) ^. re chdbStatus
+            l = spl <$> sts
+            dbSts = l >>= \(dbSt, _, mDbRebl) -> [dbSt] ++ maybe [] (return . fst) mDbRebl
+            dbAccs = l >>= \(_, dbAcc, mDbRebl) -> [dbAcc] ++ maybe [] (return . snd) mDbRebl
+        (addSts, _) <- divideByDB conn dbSts CacheDB.statusid CacheDB.status CacheDB.statusid'
+        (addAccs, updAccs) <- divideByDB conn dbAccs CacheDB.accountid CacheDB.account CacheDB.accountid'
+        return (addSts, addAccs, updAccs)
+
+    divideByDB ::
+        Connection -> [a] -> (a -> Maybe Int64) -> Relation () a -> Pi a (Maybe Int64) ->
+        IO ([a], [a])
+    divideByDB conn l0 pickId record fldId =
+      do
+        let l = nubBy (\x y -> pickId x == pickId y) $ sortOn pickId l0
+            pickedIds = fromIntegral <$> catMaybes (pickId <$> l)
+
+        -- Search DB
+        preExistingIds <- liftIO $ runQuery conn `flip` () $ relationalQuery . relation $
+          do
+            h <- query record
+            wheres $ h ! fldId `in'` values (Just <$> pickedIds)
+            asc $ h ! fldId
+            return $ h ! fldId
+        return $ divideByMerge pickId l preExistingIds
+
+    divideByMerge _ [] _ = ([], [])
+    divideByMerge _ l [] = (l, [])
+    divideByMerge f l@(x:xs) l2@(y:ys)
+        | f x == y = let (r1, r2) = divideByMerge f xs l2 in (r1, x:r2)
+        | f x < y = let (r1, r2) = divideByMerge f xs l2 in (x:r1, r2)
+        | f x > y = divideByMerge f l ys
+
+{-
+        maybe (return ()) `flip` mDbRebl $ \(dbReblSt, dbReblAcc) ->
+          do
+            runInsert conn (derivedInsert id') dbReblSt
+            runInsert conn (derivedInsert id') dbReblAcc
+            return ()
+-}
+
+readStatusCache :: Hostname -> DSKind -> IO [Hdon.Status]
+readStatusCache hn dsKind
+    | isCachableDS dsKind = R.runResourceT $
+      do
+        conn <- getCacheConn
+
+        sts <- liftIO $ runQuery conn `flip` () $ relationalQuery . relation $
+          do
+            st <- query CacheDB.status
+            acc <- query CacheDB.account
+            on $ st ! CacheDB.statusaccount' .=. acc ! CacheDB.accountid'
+
+            wheres $ st ! CacheDB.statusdskind' .=. value (Just $ Text.pack $ show dsKind)
+            desc $ st ! CacheDB.statusid'
+            return $ (,) |$| st |*| acc
+        liftIO $ commit conn
+        return $
+          do
+            (dbSt, dbAcc) <- sts
+            (st, _, _) <- maybe mzero return $ (dbSt, dbAcc, Nothing) ^? chdbStatus
+            return st
+
+    | otherwise =
+        return []
+
 
 --
 -- Accessors
@@ -248,17 +481,29 @@ requireRange ::
     T runner -> DataSource -> RPH -> IO ()
 requireRange model ((^? _DSSSource) -> Just ds0) rph = fmap (const ()) $ forkIO $
   do
+    -- Fetch by cache
+    sts0 <- readStatusCache (Text.pack $ ds0 ^. host) (DSS $ _dsKind ds0)
+    mailboxPost (model ^. updateRPHMBox) (rph ^. rphId, sts0, False)
+
+    -- Fetch by HTTP
     res <- initialReadDs ds0
     sts <- either (\s -> error ("requireRange error\n" ++ show s)) return res
     let testNoLeft tgt = not . null $ filter (\st -> Hdon.statusId st == tgt) sts
         noLeft = maybe False testNoLeft (rph ^. rphLower)
     mailboxPost (model ^. updateRPHMBox) (rph ^. rphId, sts, noLeft)
+
+    -- Cache
+    let hst = Text.pack $ ds0 ^. host
+        kin = DSS $ _dsKind ds0
+    writeStatusCache hst kin sts
   where
-    initialReadDs (DataSource _ DSHome) = Hdon.getHomeTimelineWithOption client q
+    initialReadDs (DataSource _ DSHome) =
+        Hdon.getHomeTimelineWithOption client q
     initialReadDs (DataSource _ (DSUserStatus userId)) =
         Hdon.getAccountStatuses client userId
+    initialReadDs _ =
+        Hdon.getPublicTimelineWithOption client q
 
-    initialReadDs _ = Hdon.getPublicTimelineWithOption client q
     client = (ds0 ^. hastodonClient)
     q = mconcat $ catMaybes [
         Hdon.minId <$> (rph ^. rphLower),
