@@ -185,15 +185,26 @@ chdbStatus = prism' statusTo statusFrom
     statusTo (Hdon.Status {..}, hostId, dsKind) = (st, acc, rebl)
       where
         st = CacheDB.Status
-            (toI statusId) (toS statusUri) (toS statusUrl)
-            (toI $ Hdon.accountId statusAccount) (statusInReplyToId >>= toI)
-            (statusInReplyToAccountId >>= toI) (fmap Hdon.statusId statusReblog >>= toI)
-            (toS statusContent) (toTime statusCreatedAt)
-            (toI statusReblogsCount) (toI statusFavouritesCount)
-            (toMB statusReblogged) (toMB statusFavourited)
-            (toMB statusSensitive) (toS statusSpoilerText) (toS statusVisibility)
-            (toI hostId)
-            (Text.pack . show <$> dsKind)
+          {
+            statusid = toI statusId,
+            statusuri = toS statusUri,
+            statusurl = toS statusUrl,
+            statusaccount = toI $ Hdon.accountId statusAccount,
+            statusinreplytoid = statusInReplyToId >>= toI,
+            statusinreplytoaccountid = statusInReplyToAccountId >>= toI,
+            statusreblog = fmap Hdon.statusId statusReblog >>= toI,
+            statuscontent = toS statusContent,
+            statuscreatedat = toTime statusCreatedAt,
+            statusreblogscount = toI statusReblogsCount,
+            statusfavouritescount = toI statusFavouritesCount,
+            statusreblogged = toMB statusReblogged,
+            statusfavourited = toMB statusFavourited,
+            statussensitive = toMB statusSensitive,
+            statusspoilertext = toS statusSpoilerText,
+            statusvisibility = toS statusVisibility,
+            statushostid = toI hostId,
+            statusdskind = Text.pack . show <$> dsKind
+          }
         acc =
             (statusAccount, hostId) ^. re chdbAccount
         rebl =
@@ -207,31 +218,32 @@ chdbStatus = prism' statusTo statusFrom
             fromI statushostid <*> (pure $ statusdskind >>= (^? _Show) . Text.unpack)
       where
         stBody =
-            Hdon.Status <$>
-                fromI statusid <*>
-                fromS statusuri <*>
-                fromS statusurl <*>
-                (fst <$> (acc ^? chdbAccount)) <*>
-                (pure $ fromI statusinreplytoid) <*>
-                (pure $ fromI statusinreplytoaccountid) <*>
-                (pure $
-                  do
-                    (s, a) <- rebl
-                    (chs, _, _) <- (s, a, Nothing) ^? chdbStatus
-                    return chs) <*>
-                fromS statuscontent <*>
-                fromTime statuscreatedat <*>
-                fromI statusreblogscount <*>
-                fromI statusfavouritescount <*>
-                fromMB statusreblogged <*>
-                fromMB statusfavourited <*>
-                fromMB statussensitive <*>
-                fromS statusspoilertext <*>
-                fromS statusvisibility <*>
-                pure [] <*>
-                pure [] <*>
-                pure [] <*>
-                pure Nothing
+          do
+            statusId <- fromI statusid
+            statusUri <- fromS statusuri
+            statusUrl <- fromS statusurl
+            statusAccount <- fst <$> (acc ^? chdbAccount)
+            statusInReplyToId <- pure $ fromI statusinreplytoid
+            statusInReplyToAccountId <- pure $ fromI statusinreplytoaccountid
+            statusReblog <- pure $
+              do
+                (s, a) <- rebl
+                (chs, _, _) <- (s, a, Nothing) ^? chdbStatus
+                return chs
+            statusContent <- fromS statuscontent
+            statusCreatedAt <- fromTime statuscreatedat
+            statusReblogsCount <- fromI statusreblogscount
+            statusFavouritesCount <- fromI statusfavouritescount
+            statusReblogged <- fromMB statusreblogged
+            statusFavourited <- fromMB statusfavourited
+            statusSensitive <- fromMB statussensitive
+            statusSpoilerText <- fromS statusspoilertext
+            statusVisibility <- fromS statusvisibility
+            statusMediaAttachments <- pure []
+            statusMentions <- pure []
+            statusTags <- pure []
+            statusApplication <- pure Nothing
+            return Hdon.Status{..}
     toI = Just . fromIntegral
     fromI = fmap fromIntegral
     toS = Just . Text.pack
