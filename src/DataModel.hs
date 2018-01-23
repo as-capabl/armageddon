@@ -129,42 +129,52 @@ chdbAccount = prism' accountTo accountFrom
   where
     accountTo (Hdon.Account {..}, hostId) =
         CacheDB.Account
-            (toI accountId) (toS accountUsername) (toS accountAcct)
-            (toS accountDisplayName) (toB $ Just accountLocked) (toTime accountCreatedAt)
-            (toI accountFollowersCount) (toI accountFollowingCount)
-            (toI accountStatusesCount) (toS accountNote)
-            (toS accountUrl) (toS accountAvatar) (toS accountAvatarStatic)
-            (toS accountHeader) (toS accountHeaderStatic) (toI hostId)
-
-    accountFrom (CacheDB.Account {..}) =
-        (,) <$>
-            (Hdon.Account <$>
-                fromI accountid <*>
-                fromS accountusername <*>
-                fromS accountacct <*>
-                fromS accountdisplayname <*>
-                fromB' accountlocked <*>
-                fromTime accountcreatedat <*>
-                fromI accountfollowerscount <*>
-                fromI accountfollowingcount <*>
-                fromI accountstatusescount <*>
-                fromS accountnote <*>
-                fromS accounturl <*>
-                fromS accountavatar <*>
-                fromS accountavatarstatic <*>
-                fromS accountheader <*>
-                fromS accountheaderstatic) <*>
-            fromI accounthostid
+          {
+            accountid = toI accountId,
+            accountusername = toS accountUsername,
+            accountacct = toS accountAcct,
+            accountdisplayname = toS accountDisplayName,
+            accountlocked = toB accountLocked,
+            accountcreatedat = toTime accountCreatedAt,
+            accountfollowerscount = toI accountFollowersCount,
+            accountfollowingcount = toI accountFollowingCount,
+            accountstatusescount = toI accountStatusesCount,
+            accountnote = toS accountNote,
+            accounturl = toS accountUrl,
+            accountavatar = toS accountAvatar,
+            accountavatarstatic = toS accountAvatarStatic,
+            accountheader = toS accountHeader,
+            accountheaderstatic = toS accountHeaderStatic,
+            accounthostid = toI hostId
+          }
+    accountFrom (CacheDB.Account {..}) = (,) <$> acc <*> fromI accounthostid
+      where
+        acc =
+          do
+            accountId <- fromI accountid
+            accountUsername <- fromS accountusername
+            accountAcct <- fromS accountacct
+            accountDisplayName <- fromS accountdisplayname
+            accountLocked <- fromB accountlocked
+            accountCreatedAt <- fromTime accountcreatedat
+            accountFollowersCount <- fromI accountfollowerscount
+            accountFollowingCount <- fromI accountfollowingcount
+            accountStatusesCount <- fromI accountstatusescount
+            accountNote <- fromS accountnote
+            accountUrl <- fromS accounturl
+            accountAvatar <- fromS accountavatar
+            accountAvatarStatic <- fromS accountavatarstatic
+            accountHeader <- fromS accountheader
+            accountHeaderStatic <- fromS accountheaderstatic
+            return Hdon.Account{..}
     toI = Just . fromIntegral
     fromI = fmap fromIntegral
     toS = Just . Text.pack
     fromS = fmap Text.unpack
     toTime str = toDBTime <$> parseTimeM True defaultTimeLocale isoTimeFormat str
     fromTime = fmap (formatTime defaultTimeLocale isoTimeFormat . fromDBTime)
-    toB = fmap toB'
-    toB' x = if x then 1 else 0
-    -- fromB = pure . fromB'
-    fromB' = fmap (/= 0)
+    toB x = Just $ if x then 1 else 0
+    fromB = fmap (/= 0)
 
 chdbStatus ::
     Prism'
