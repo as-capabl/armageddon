@@ -190,8 +190,8 @@ chdbStatus = prism' statusTo statusFrom
             (statusInReplyToAccountId >>= toI) (fmap Hdon.statusId statusReblog >>= toI)
             (toS statusContent) (toTime statusCreatedAt)
             (toI statusReblogsCount) (toI statusFavouritesCount)
-            (toB statusReblogged) (toB statusFavourited)
-            (toB statusSensitive) (toS statusSpoilerText) (toS statusVisibility)
+            (toMB statusReblogged) (toMB statusFavourited)
+            (toMB statusSensitive) (toS statusSpoilerText) (toS statusVisibility)
             (toI hostId)
             (Text.pack . show <$> dsKind)
         acc =
@@ -202,48 +202,46 @@ chdbStatus = prism' statusTo statusFrom
             let (s, a, _) = (x, hostId, Nothing) ^. re chdbStatus
             return (s, a)
 
-    statusFrom (CacheDB.Status sId sUri sUrl sAccount sInReplyToId sInReplyToAccountId
-            sReblog sContent sCreatedAt sReblogsCount sFavouritesCount sReblogged
-            sFavourited sSensitive sSpoilerText sVisibility sHostId sDsKind,
-        acc, rebl) =
-        (,,) <$>
-            (Hdon.Status <$>
-                fromI sId <*>
-                fromS sUri <*>
-                fromS sUrl <*>
+    statusFrom (CacheDB.Status {..}, acc, rebl) =
+        (,,) <$> stBody <*>
+            fromI statushostid <*> (pure $ statusdskind >>= (^? _Show) . Text.unpack)
+      where
+        stBody =
+            Hdon.Status <$>
+                fromI statusid <*>
+                fromS statusuri <*>
+                fromS statusurl <*>
                 (fst <$> (acc ^? chdbAccount)) <*>
-                (pure $ fromI sInReplyToId) <*>
-                (pure $ fromI sInReplyToAccountId) <*>
+                (pure $ fromI statusinreplytoid) <*>
+                (pure $ fromI statusinreplytoaccountid) <*>
                 (pure $
                   do
                     (s, a) <- rebl
                     (chs, _, _) <- (s, a, Nothing) ^? chdbStatus
                     return chs) <*>
-                fromS sContent <*>
-                fromTime sCreatedAt <*>
-                fromI sReblogsCount <*>
-                fromI sFavouritesCount <*>
-                fromB sReblogged <*>
-                fromB sFavourited <*>
-                fromB sSensitive <*>
-                fromS sSpoilerText <*>
-                fromS sVisibility <*>
+                fromS statuscontent <*>
+                fromTime statuscreatedat <*>
+                fromI statusreblogscount <*>
+                fromI statusfavouritescount <*>
+                fromMB statusreblogged <*>
+                fromMB statusfavourited <*>
+                fromMB statussensitive <*>
+                fromS statusspoilertext <*>
+                fromS statusvisibility <*>
                 pure [] <*>
                 pure [] <*>
                 pure [] <*>
-                pure Nothing) <*>
-            fromI sHostId <*> (pure $ sDsKind >>= (^? _Show) . Text.unpack)
-
+                pure Nothing
     toI = Just . fromIntegral
     fromI = fmap fromIntegral
     toS = Just . Text.pack
     fromS = fmap Text.unpack
     toTime str = toDBTime <$> parseTimeM True defaultTimeLocale isoTimeFormat str
     fromTime = fmap (formatTime defaultTimeLocale isoTimeFormat . fromDBTime)
-    toB = fmap toB'
-    toB' x = if x then 1 else 0
-    fromB = pure . fromB'
-    fromB' = fmap (/= 0)
+    toB x = Just $ if x then 1 else 0
+    fromB = fmap (/= 0)
+    toMB mx = mx >>= toB
+    fromMB = Just . fromB
 
 writeReg :: Registration -> IO ()
 writeReg reg = R.runResourceT $
