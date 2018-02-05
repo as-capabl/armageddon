@@ -13,6 +13,7 @@ import Control.Lens
 import qualified Data.Tree as Tree
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as TextL
+import qualified Data.Text.Read as Text
 import qualified Data.Text.Lazy.Builder as TextL
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Char (chr)
@@ -381,7 +382,7 @@ extractRPH doc tId = runMaybeT $
     return $ RPH
       {
         _rphId = tId,
-        _rphUpper = join $ domIdToStatusId <$> pvId,
-        _rphLower = join $ domIdToStatusId <$> nxId
+        _rphUpper = pvId >>= domIdToStatusId >>= return . read, -- stab
+        _rphLower = nxId >>= domIdToStatusId >>= return . read -- stab
       }
 

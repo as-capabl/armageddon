@@ -130,7 +130,7 @@ chdbAccount = prism' accountTo accountFrom
     accountTo (Hdon.Account {..}, hostId) =
         CacheDB.Account
           {
-            accountid = toI accountId,
+            accountid = toS accountId,
             accountusername = toS accountUsername,
             accountacct = toS accountAcct,
             accountdisplayname = toS accountDisplayName,
@@ -151,7 +151,7 @@ chdbAccount = prism' accountTo accountFrom
       where
         acc =
           do
-            accountId <- fromI accountid
+            accountId <- fromS accountid
             accountUsername <- fromS accountusername
             accountAcct <- fromS accountacct
             accountDisplayName <- fromS accountdisplayname
@@ -186,13 +186,13 @@ chdbStatus = prism' statusTo statusFrom
       where
         st = CacheDB.Status
           {
-            statusid = toI statusId,
+            statusid = toS statusId,
             statusuri = toS statusUri,
             statusurl = toS statusUrl,
-            statusaccount = toI $ Hdon.accountId statusAccount,
-            statusinreplytoid = statusInReplyToId >>= toI,
-            statusinreplytoaccountid = statusInReplyToAccountId >>= toI,
-            statusreblog = fmap Hdon.statusId statusReblog >>= toI,
+            statusaccount = toS $ Hdon.accountId statusAccount,
+            statusinreplytoid = statusInReplyToId >>= toS,
+            statusinreplytoaccountid = statusInReplyToAccountId >>= toS,
+            statusreblog = fmap Hdon.statusId statusReblog >>= toS,
             statuscontent = toS statusContent,
             statuscreatedat = toTime statusCreatedAt,
             statusreblogscount = toI statusReblogsCount,
@@ -219,12 +219,12 @@ chdbStatus = prism' statusTo statusFrom
       where
         stBody =
           do
-            statusId <- fromI statusid
+            statusId <- fromS statusid
             statusUri <- fromS statusuri
             statusUrl <- fromS statusurl
             statusAccount <- fst <$> (acc ^? chdbAccount)
-            statusInReplyToId <- pure $ fromI statusinreplytoid
-            statusInReplyToAccountId <- pure $ fromI statusinreplytoaccountid
+            statusInReplyToId <- pure $ fromS statusinreplytoid
+            statusInReplyToAccountId <- pure $ fromS statusinreplytoaccountid
             statusReblog <- pure $
               do
                 (s, a) <- rebl
@@ -350,12 +350,12 @@ writeStatusCache hn dsKind sts = when (isCachableDS dsKind) $ R.runResourceT $
         return (addSts, addAccs, updAccs)
 
     divideByDB ::
-        Connection -> [a] -> (a -> Maybe Int64) -> Relation () a -> Pi a (Maybe Int64) ->
+        Connection -> [a] -> (a -> Maybe BMText) -> Relation () a -> Pi a (Maybe BMText) ->
         IO ([a], [a])
     divideByDB conn l0 pickId record fldId =
       do
         let l = nubBy (\x y -> pickId x == pickId y) $ sortOn pickId l0
-            pickedIds = fromIntegral <$> catMaybes (pickId <$> l)
+            pickedIds = catMaybes (pickId <$> l)
 
         -- Search DB
         preExistingIds <- liftIO $ runQuery conn `flip` () $ relationalQuery . relation $
@@ -462,13 +462,13 @@ selDS model ds =
 
 selUserDSByStatusId ::
     WorldRunner IO IO (runner IO IO) =>
-    T runner -> Registration -> Int -> IO ()
+    T runner -> Registration -> Hdon.HastodonId -> IO ()
 selUserDSByStatusId model reg statusId = fmap (const ()) $ forkIO $
   do
     Right st <- Hdon.getStatus (reg ^. hastodonClient) statusId
     let account = Hdon.statusAccount st
         accountId = Hdon.accountId account
-    selDS model $ DataSource reg (DSS $ DSUserStatus accountId)
+    selDS model $ DataSource reg (DSS $ DSUserStatus (Text.pack accountId))
 
 onSelDS ::
     WorldRunner IO IO (runner IO IO) =>
@@ -508,7 +508,7 @@ requireRange model ((^? _DSSSource) -> Just ds0) rph = fmap (const ()) $ forkIO 
     -- Fetch by HTTP
     res <- initialReadDs ds0
     sts <- either (\s -> error ("requireRange error\n" ++ show s)) return res
-    let testNoLeft tgt = not . null $ filter (\st -> Hdon.statusId st == tgt) sts
+    let testNoLeft tgt = not . null $ filter (\st -> Hdon.statusId st == show tgt) sts
         noLeft = maybe False testNoLeft (rph ^. rphLower)
     mailboxPost (model ^. updateRPHMBox) (rph ^. rphId, sts, noLeft)
 
@@ -520,29 +520,29 @@ requireRange model ((^? _DSSSource) -> Just ds0) rph = fmap (const ()) $ forkIO 
     initialReadDs (DataSource _ DSHome) =
         Hdon.getHomeTimelineWithOption client q
     initialReadDs (DataSource _ (DSUserStatus userId)) =
-        Hdon.getAccountStatuses client userId
+        Hdon.getAccountStatuses client (Text.unpack userId)
     initialReadDs _ =
         Hdon.getPublicTimelineWithOption client q
 
     client = (ds0 ^. hastodonClient)
     q = mconcat $ catMaybes [
-        Hdon.minId <$> (rph ^. rphLower),
-        Hdon.maxId <$> (rph ^. rphUpper)
+        Hdon.minId . show <$> (rph ^. rphLower),
+        Hdon.maxId . show <$> (rph ^. rphUpper)
       ]
 
 requireRange model ((^? _DSNSource) -> Just ds0) rph = fmap (const ()) $ forkIO $
   do
     res <- initialReadDs ds0
     sts <- either (\s -> error ("requireRange error\n" ++ show s)) return res
-    let testNoLeft tgt = not . null $ filter (\st -> Hdon.notificationId st == tgt) sts
+    let testNoLeft tgt = not . null $ filter (\st -> Hdon.notificationId st == show tgt) sts
         noLeft = maybe False testNoLeft (rph ^. rphLower)
     mailboxPost (model ^. updateRPHNMBox) (rph ^. rphId, sts, noLeft)
   where
     initialReadDs ds@(DataSource _ DSNotification) = Hdon.getNotificationsWithOption client q
     client = ds0 ^. hastodonClient
     q = mconcat $ catMaybes [
-        Hdon.minId <$> (rph ^. rphLower),
-        Hdon.maxId <$> (rph ^. rphUpper)
+        Hdon.minId . show <$> (rph ^. rphLower),
+        Hdon.maxId . show <$> (rph ^. rphUpper)
       ]
 
 onUpdateRange model = proc world ->
@@ -555,7 +555,7 @@ onUpdateNRange model = proc world ->
 
 updateStatus ::
     WorldRunner IO IO (runner IO IO) =>
-    T runner -> Hdon.HastodonClient -> Int -> IO ()
+    T runner -> Hdon.HastodonClient -> Hdon.HastodonId -> IO ()
 updateStatus model cli i = fmap (const ()) $ forkIO $
   do
     Right st <- Hdon.getStatus cli i
@@ -568,7 +568,7 @@ onUpdateStatus model = proc world ->
 
 sendFav ::
     WorldRunner IO IO (runner IO IO) =>
-    T runner -> Hdon.HastodonClient -> Int -> IO ()
+    T runner -> Hdon.HastodonClient -> Hdon.HastodonId -> IO ()
 sendFav model cli i = (() <$) $ forkIO $ (() <$) $ runMaybeT $
   do
     st <- warnIfFail $ Hdon.postFavorite cli i
@@ -577,7 +577,7 @@ sendFav model cli i = (() <$) $ forkIO $ (() <$) $ runMaybeT $
 
 sendReblog ::
     WorldRunner IO IO (runner IO IO) =>
-    T runner -> Hdon.HastodonClient -> Int -> IO ()
+    T runner -> Hdon.HastodonClient -> Hdon.HastodonId -> IO ()
 sendReblog model cli i = (() <$) $ forkIO $ (() <$) $ runMaybeT $
   do
     st <- warnIfFail $ Hdon.postReblog cli i

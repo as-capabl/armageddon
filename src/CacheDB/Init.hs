@@ -34,13 +34,13 @@ createCache cacheFile =
     runRaw conn "CREATE TABLE file(fileVersion integer primary key, fileKind text);"
     runRaw conn "CREATE TABLE host(hostId integer primary key, hostName text);"
     runRaw conn $ "CREATE TABLE status(" ++
-        "statusId integer," ++
+        "statusId text," ++
         "statusUri text," ++
         "statusUrl text," ++
-        "statusAccount integer," ++
-        "statusInReplyToId integer," ++ -- nullable
-        "statusInReplyToAccountId integer," ++ --nullable
-        "statusReblog integer," ++ -- nullable
+        "statusAccount text," ++
+        "statusInReplyToId text," ++ -- nullable
+        "statusInReplyToAccountId text," ++ --nullable
+        "statusReblog text," ++ -- nullable
         "statusContent text," ++
         "statusCreatedAt integer," ++ -- time
         "statusReblogsCount integer," ++
@@ -59,7 +59,7 @@ createCache cacheFile =
         "primary key(statusId, statusHostId));"
 
     runRaw conn $ "CREATE TABLE account(" ++
-        "accountId integer," ++
+        "accountId text," ++
         "accountUsername text," ++
         "accountAcct text," ++
         "accountDisplayName text," ++

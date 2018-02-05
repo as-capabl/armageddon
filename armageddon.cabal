@@ -60,6 +60,7 @@ executable armageddon-app
                      , Graphics.UI.McWebkit
                      , Async
                      , AuthDialog
+                     , ClassyDOM
                      , Content
                      , MainForm
 

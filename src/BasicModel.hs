@@ -98,7 +98,7 @@ instance Hashable Registration
 
 -- Data Source
 data DSKind = DSS DSSKind | DSN DSNKind deriving (Eq, Show, Read)
-data DSSKind = DSHome | DSPublic | DSUserStatus Int | DSSearch BMText | DSHashtag BMText
+data DSSKind = DSHome | DSPublic | DSUserStatus BMText | DSSearch BMText | DSHashtag BMText
   deriving (Eq, Show, Read)
 data DSNKind = DSNotification deriving (Eq, Show, Read)
 
@@ -148,8 +148,8 @@ isCachableDS _ = False
 data RPH = RPH
   {
     _rphId :: BMText,
-    _rphUpper :: Maybe Int,
-    _rphLower :: Maybe Int
+    _rphUpper :: Maybe Integer,
+    _rphLower :: Maybe Integer
   }
   deriving (Eq, Show)
 makeLenses ''RPH
@@ -166,17 +166,13 @@ notificationPrefix = "notification_"
 statusIdInvalid :: Int
 statusIdInvalid = -1
 
-statusIdToDomId :: Int -> BMText
-statusIdToDomId x = statusPrefix `mappend` Text.pack (show x)
+statusIdToDomId :: Hdon.HastodonId -> BMText
+statusIdToDomId x = statusPrefix `mappend` Text.pack x
 
-domIdToStatusId :: BMText -> Maybe Int
-domIdToStatusId x =
-    case Text.decimal numPart
-      of
-        Left _ -> Nothing
-        Right (y, _) -> Just y
+domIdToStatusId :: BMText -> Maybe Hdon.HastodonId
+domIdToStatusId x = Just (Text.unpack numPart)
   where
     (_, numPart) = Text.breakOnEnd "_" x
 
-notificationIdToDomId :: Int -> BMText
-notificationIdToDomId x = notificationPrefix `mappend` Text.pack (show x)
+notificationIdToDomId :: Hdon.HastodonId -> BMText
+notificationIdToDomId x = notificationPrefix `mappend` Text.pack x
