@@ -1,6 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE Strict, StrictData #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module
     Content
@@ -27,6 +30,15 @@ import qualified Graphics.UI.Gtk.WebKit.DOM.HTMLAnchorElement as DOM
 import qualified Web.Hastodon as Hdon
 
 import BasicModel
+import qualified ClassyDOM as Tmpl
+
+instance Tmpl.Template "hdon_status"
+  where
+    type Structure "hdon_status" = Tree.Node ('Tmpl.NodeT Tmpl.Div "hdon_status")
+      '[
+        Tree.Node ('Tmpl.NodeT Tmpl.A "name") '[]
+       ]
+
 
 --
 -- Utility
@@ -222,8 +234,8 @@ domifyStatus doc st = runMaybeT $
         DOM.setClassName ch classStInfo
 
         dateDiv <- textDiv classCreateAt $ Hdon.statusCreatedAt st
-        favDiv <- textDiv classFavBox $ nonzeroText $ Hdon.statusFavouritesCount st
-        rebDiv <- textDiv classRebBox $ nonzeroText $ Hdon.statusReblogsCount st
+        favDiv <- textDiv classFavBox $ Text.unpack $ nonzeroText $ Hdon.statusFavouritesCount st
+        rebDiv <- textDiv classRebBox $ Text.unpack $ nonzeroText $ Hdon.statusReblogsCount st
 
         clearEl <- MaybeT $ DOM.createElement doc (Just "div" :: Maybe Text.Text)
         DOM.setClassName clearEl classStatusClear
