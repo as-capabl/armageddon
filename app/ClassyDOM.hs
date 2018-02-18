@@ -7,6 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs #-}
 
 module
     ClassyDOM
@@ -29,28 +30,13 @@ data NodeV = Node TagKind Attr | TextNode Tx.Text
 
 
 -- Type kinds
-data TreeT = NodeT TagKind Symbol [TreeT] | TextT Symbol
+data TreeT = NodeT TagKind Symbol [TreeT] | TextT
 
 -- Classes
 class Template (name :: Symbol)
   where
     type Structure name :: TreeT
 
-class BuildChildren s l
-  where {}
-
-instance BuildChildren (TextT n) l
-  where {}
-
-instance BuildChildren (NodeT t n '[]) l
-  where {}
-
-{-
-instance
-    (BuildChildren (NodeT t n chs) l, SubStructurePath s l ch '[n], BuildNode ch l1) =>
-    BuildChildren (NodeT t n (ch:chs)) l
-  where {}
--}
 
 type family SubTreeHelper (x :: TreeT) (xs :: [TreeT]) (xss :: [[TreeT]]) (n :: Symbol) :: TreeT
   where
@@ -61,16 +47,23 @@ type family SubTreeHelper (x :: TreeT) (xs :: [TreeT]) (xss :: [[TreeT]]) (n :: 
 
 type SubTree s n = SubTreeHelper s '[] '[] n
 
---class (SubStructurePath s l sThis '[], BuildChildren sThis l) => BuildNode s l
---  where {}
-class BuildNode s l
-  where {}
+data BuilderElem (d :: *) (tmpl :: Symbol) (x :: TreeT)
+  where
+    NodeBuilder :: (x ~ NodeT t n children, BuildNode d tmpl n) => BuilderElem d tmpl x
+    TextBuilder :: Tx.Text -> BuilderElem d tmpl TextT
 
-type Build n = (BuildNode '[n] (Structure n))
+data Builder_ (d :: *) (tmpl :: Symbol) (xs :: [TreeT])
+  where
+    NilBuilder :: Builder_ d tmpl '[]
+    ConsBuilder :: BuilderElem d tmpl x -> Builder_ d tmpl xs -> Builder_ d tmpl (x:xs)
 
+data Builder (d :: *) (tmpl :: Symbol) (n :: Symbol)
+  where
+    Builder ::
+        SubTree (Structure tmpl) n ~ NodeT t n children =>
+        Builder_ d tmpl children -> Builder d tmpl n
 
-
--- 最終フィンブル、無凸フィンブル、プニル、玄武斧、玄武拳
--- ミュル、アン槍orヴァジラ拳、リヴァ短剣、鶴丸、天司
-
+class BuildNode d tmpl n
+  where
+    buildNode :: d -> Builder d tmpl n
 
