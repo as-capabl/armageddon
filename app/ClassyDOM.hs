@@ -45,23 +45,21 @@ instance BuildChildren (TextT n) l
 instance BuildChildren (NodeT t n '[]) l
   where {}
 
+{-
 instance
     (BuildChildren (NodeT t n chs) l, SubStructurePath s l ch '[n], BuildNode ch l1) =>
     BuildChildren (NodeT t n (ch:chs)) l
   where {}
+-}
 
-class SubStructurePath s0 l0 s l | s0 l0 l -> s
-  where {}
+type family SubTreeHelper (x :: TreeT) (xs :: [TreeT]) (xss :: [[TreeT]]) (n :: Symbol) :: TreeT
+  where
+    SubTreeHelper (NodeT t n ch) xs xss n = NodeT t n ch
+    SubTreeHelper (NodeT t n0 (ch : chs)) xs xss n = SubTreeHelper ch chs (xs:xss) n
+    SubTreeHelper z (x:xs) xss n = SubTreeHelper x xs xss n
+    SubTreeHelper z '[] (xs:xss) n = SubTreeHelper z xs xss n
 
-instance
-    SubStructurePath (NodeT t n (ch ': chs)) (n ': l) ch l
-  where {}
-
-instance
-    SubStructurePath (NodeT t n chs) l0 s l =>
-    SubStructurePath (NodeT t n (ch ': chs)) l0 s l
-  where {}
-
+type SubTree s n = SubTreeHelper s '[] '[] n
 
 --class (SubStructurePath s l sThis '[], BuildChildren sThis l) => BuildNode s l
 --  where {}

@@ -34,10 +34,11 @@ import qualified ClassyDOM as Tmpl
 
 instance Tmpl.Template "hdon_status"
   where
-    type Structure "hdon_status" = Tree.Node ('Tmpl.NodeT Tmpl.Div "hdon_status")
-      '[
-        Tree.Node ('Tmpl.NodeT Tmpl.A "name") '[]
-       ]
+    type Structure "hdon_status" =
+        'Tmpl.NodeT Tmpl.Div "hdon_status"
+          '[
+            'Tmpl.NodeT Tmpl.A "name" '[]
+           ]
 
 
 --
