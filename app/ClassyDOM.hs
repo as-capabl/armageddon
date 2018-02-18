@@ -2,18 +2,22 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module
     ClassyDOM
 where
 
 import GHC.TypeLits
+import Data.Proxy
 import qualified Data.Tree as Tr
 import qualified Data.Text as Tx
 
@@ -22,15 +26,22 @@ data TagKind = A | Div | Span
 
 data Attr = Attr
   {
-    _id :: Maybe Tx.Text,
-    _class :: [Tx.Text]
+    attrClass :: [Tx.Text],
+    attrAttr :: [(Tx.Text, Tx.Text)]
   }
 
-data NodeV = Node TagKind Attr | TextNode Tx.Text
+data NodeV = NodeV Tx.Text Attr | TextNode Tx.Text
 
+type TreeV = Tr.Tree NodeV
+
+data CSSEntry = CSSEntry
+  {
+    cssSelector :: Tx.Text,
+    cssStyle :: [Tx.Text]
+  }
 
 -- Type kinds
-data TreeT = NodeT TagKind Symbol [TreeT] | TextT
+data TreeT = NodeT Symbol Symbol [TreeT] | TextT
 
 -- Classes
 class Template (name :: Symbol)
@@ -38,7 +49,13 @@ class Template (name :: Symbol)
     type Structure name :: TreeT
 
 
-type family SubTreeHelper (x :: TreeT) (xs :: [TreeT]) (xss :: [[TreeT]]) (n :: Symbol) :: TreeT
+--
+-- SubTree
+--
+type family
+    SubTreeHelper
+        (x :: TreeT) (xs :: [TreeT]) (xss :: [[TreeT]]) (n :: Symbol)
+        :: TreeT
   where
     SubTreeHelper (NodeT t n ch) xs xss n = NodeT t n ch
     SubTreeHelper (NodeT t n0 (ch : chs)) xs xss n = SubTreeHelper ch chs (xs:xss) n
@@ -47,9 +64,13 @@ type family SubTreeHelper (x :: TreeT) (xs :: [TreeT]) (xss :: [[TreeT]]) (n :: 
 
 type SubTree s n = SubTreeHelper s '[] '[] n
 
+--
+-- Build
+--
+
 data BuilderElem (d :: *) (tmpl :: Symbol) (x :: TreeT)
   where
-    NodeBuilder :: (x ~ NodeT t n children, BuildNode d tmpl n) => BuilderElem d tmpl x
+    NodeBuilder :: (x ~ NodeT t n children, BuildNode d tmpl n) => Proxy n -> BuilderElem d tmpl x
     TextBuilder :: Tx.Text -> BuilderElem d tmpl TextT
 
 data Builder_ (d :: *) (tmpl :: Symbol) (xs :: [TreeT])
@@ -60,10 +81,25 @@ data Builder_ (d :: *) (tmpl :: Symbol) (xs :: [TreeT])
 data Builder (d :: *) (tmpl :: Symbol) (n :: Symbol)
   where
     Builder ::
-        SubTree (Structure tmpl) n ~ NodeT t n children =>
-        Builder_ d tmpl children -> Builder d tmpl n
+        (SubTree (Structure tmpl) n ~ NodeT t n children, KnownSymbol n) =>
+        Attr -> Builder_ d tmpl children -> Builder d tmpl n
 
 class BuildNode d tmpl n
   where
-    buildNode :: d -> Builder d tmpl n
+    css :: Proxy d -> Proxy tmpl -> Proxy n -> [Tx.Text]
+    buildNode :: Proxy tmpl -> Proxy n -> d -> Builder d tmpl n
 
+buildTmpl :: forall tmpl d. BuildNode d tmpl tmpl => Proxy tmpl -> d -> TreeV
+buildTmpl p d = breakBuilder (buildNode p p d)
+  where
+    breakBuilder :: forall n. Builder d tmpl n -> TreeV
+    breakBuilder (Builder attr bs) =
+        Tr.Node (NodeV (Tx.pack $ symbolVal (Proxy @n)) attr) $ breakBuilder_ bs
+
+    breakBuilder_ :: forall n. Builder_ d tmpl n -> [TreeV]
+    breakBuilder_ NilBuilder = []
+    breakBuilder_ (ConsBuilder elem rest) = breakElem elem : breakBuilder_ rest
+
+    breakElem :: forall x. BuilderElem d tmpl x -> TreeV
+    breakElem (NodeBuilder p1) = breakBuilder (buildNode p p1 d)
+    breakElem (TextBuilder txt) = Tr.Node (TextNode txt) []

@@ -35,9 +35,9 @@ import qualified ClassyDOM as Tmpl
 instance Tmpl.Template "hdon_status"
   where
     type Structure "hdon_status" =
-        'Tmpl.NodeT Tmpl.Div "hdon_status"
+        'Tmpl.NodeT "div" "hdon_status"
           '[
-            'Tmpl.NodeT Tmpl.A "name" '[]
+            'Tmpl.NodeT "a" "name" '[]
            ]
 
 
