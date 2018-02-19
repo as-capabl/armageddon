@@ -3,7 +3,9 @@
 {-# LANGUAGE Strict, StrictData #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module
     Content
@@ -20,6 +22,7 @@ import qualified Data.Text.Read as Text
 import qualified Data.Text.Lazy.Builder as TextL
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Char (chr)
+import Data.Proxy (Proxy(Proxy))
 
 import qualified Graphics.UI.Gtk.WebKit.DOM.Document as DOM
 import qualified Graphics.UI.Gtk.WebKit.DOM.Element as DOM
@@ -37,9 +40,25 @@ instance Tmpl.Template "hdon_status"
     type Structure "hdon_status" =
         'Tmpl.NodeT "div" "hdon_status"
           '[
-            'Tmpl.NodeT "a" "name" '[]
+            'Tmpl.NodeT "a" "name"
+              '[
+                Tmpl.TextT
+               ]
            ]
 
+instance Tmpl.BuildNode Hdon.Account "hdon_status" "name"
+  where
+    css _ _ _ = []
+    buildNode _ _ acc = Tmpl.Builder (Tmpl.Attr [] []) $
+        Tmpl.buildText (Text.pack $ Hdon.accountUsername acc) $ Tmpl.NilBuilder
+
+instance Tmpl.BuildNode Hdon.Account "hdon_status" "hdon_status"
+  where
+    css _ _ _ = []
+    buildNode _ _ _ = Tmpl.Builder (Tmpl.Attr [] []) $
+        Tmpl.buildChild $ Tmpl.NilBuilder
+
+call acc = Tmpl.buildTmpl (Proxy @ "hdon_status") (acc :: Hdon.Account)
 
 --
 -- Utility

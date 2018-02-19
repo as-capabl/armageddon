@@ -34,6 +34,12 @@ data NodeV = NodeV Tx.Text Attr | TextNode Tx.Text
 
 type TreeV = Tr.Tree NodeV
 
+data CSSStyleEntry = CSSStyleEntry
+  {
+    styleName :: Tx.Text,
+    styleValue :: Tx.Text
+  }
+
 data CSSEntry = CSSEntry
   {
     cssSelector :: Tx.Text,
@@ -65,18 +71,20 @@ type family
 type SubTree s n = SubTreeHelper s '[] '[] n
 
 --
--- Build
+-- Builder
 --
 
-data BuilderElem (d :: *) (tmpl :: Symbol) (x :: TreeT)
+data BuilderElem_ (d :: *) (tmpl :: Symbol) (x :: TreeT)
   where
-    NodeBuilder :: (x ~ NodeT t n children, BuildNode d tmpl n) => Proxy n -> BuilderElem d tmpl x
-    TextBuilder :: Tx.Text -> BuilderElem d tmpl TextT
+    NodeBuilder :: (x ~ NodeT t n children, BuildNode d tmpl n) => Proxy n -> BuilderElem_ d tmpl x
+    TextBuilder :: Tx.Text -> BuilderElem_ d tmpl TextT
+
+type BuilderElem d tmpl x = forall xs. Builder_ d tmpl xs -> Builder_ d tmpl (x:xs)
 
 data Builder_ (d :: *) (tmpl :: Symbol) (xs :: [TreeT])
   where
     NilBuilder :: Builder_ d tmpl '[]
-    ConsBuilder :: BuilderElem d tmpl x -> Builder_ d tmpl xs -> Builder_ d tmpl (x:xs)
+    ConsBuilder :: BuilderElem_ d tmpl x -> Builder_ d tmpl xs -> Builder_ d tmpl (x:xs)
 
 data Builder (d :: *) (tmpl :: Symbol) (n :: Symbol)
   where
@@ -84,9 +92,22 @@ data Builder (d :: *) (tmpl :: Symbol) (n :: Symbol)
         (SubTree (Structure tmpl) n ~ NodeT t n children, KnownSymbol n) =>
         Attr -> Builder_ d tmpl children -> Builder d tmpl n
 
+buildChild ::
+    forall d tmpl n x t ch.
+    (x ~ NodeT t n ch, BuildNode d tmpl n) =>
+    BuilderElem d tmpl x
+buildChild = ConsBuilder (NodeBuilder (Proxy @ n))
+
+buildText ::
+    Tx.Text -> BuilderElem d tmpl TextT
+buildText text = ConsBuilder (TextBuilder text)
+
+--
+-- BuildNode
+--
 class BuildNode d tmpl n
   where
-    css :: Proxy d -> Proxy tmpl -> Proxy n -> [Tx.Text]
+    css :: Proxy d -> Proxy tmpl -> Proxy n -> [CSSStyleEntry]
     buildNode :: Proxy tmpl -> Proxy n -> d -> Builder d tmpl n
 
 buildTmpl :: forall tmpl d. BuildNode d tmpl tmpl => Proxy tmpl -> d -> TreeV
@@ -100,6 +121,7 @@ buildTmpl p d = breakBuilder (buildNode p p d)
     breakBuilder_ NilBuilder = []
     breakBuilder_ (ConsBuilder elem rest) = breakElem elem : breakBuilder_ rest
 
-    breakElem :: forall x. BuilderElem d tmpl x -> TreeV
+    breakElem :: forall x. BuilderElem_ d tmpl x -> TreeV
     breakElem (NodeBuilder p1) = breakBuilder (buildNode p p1 d)
     breakElem (TextBuilder txt) = Tr.Node (TextNode txt) []
+
