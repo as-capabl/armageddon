@@ -6,12 +6,13 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module
     Content
 where
 
-import Control.Monad (forM_, mzero, join)
+import Control.Monad (forM_, mzero, join, liftM)
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 import Control.Lens
@@ -48,17 +49,42 @@ instance Tmpl.Template "hdon_status"
 
 instance Tmpl.BuildNode Hdon.Account "hdon_status" "name"
   where
-    css _ _ _ = []
-    buildNode _ _ acc = Tmpl.Builder (Tmpl.Attr [] []) $
+    css = []
+    buildNode acc = Tmpl.Builder (Tmpl.Attr [] []) $
         Tmpl.buildText (Text.pack $ Hdon.accountUsername acc) $ Tmpl.NilBuilder
 
 instance Tmpl.BuildNode Hdon.Account "hdon_status" "hdon_status"
   where
-    css _ _ _ = []
-    buildNode _ _ _ = Tmpl.Builder (Tmpl.Attr [] []) $
+    css = []
+    buildNode _ = Tmpl.Builder (Tmpl.Attr [] []) $
         Tmpl.buildChild $ Tmpl.NilBuilder
 
-call acc = Tmpl.buildTmpl (Proxy @ "hdon_status") (acc :: Hdon.Account)
+call acc = Tmpl.buildTmpl @ "hdon_status" (acc :: Hdon.Account)
+
+toDOM :: MonadIO m => DOM.Document -> Tmpl.TreeV -> m (Maybe DOM.Node)
+toDOM doc (Tree.Node x children) = runMaybeT $
+  do
+    el <- toDOMEl x
+    forM_ children $ \ch ->
+      do
+        chEl <- MaybeT $ toDOM doc ch
+        DOM.appendChild el $ Just chEl
+    return el
+  where
+    toDOMEl (Tmpl.TextNode txt) =
+      do
+        tnode <- MaybeT $ DOM.createTextNode doc txt
+        return $ DOM.toNode tnode
+    toDOMEl (Tmpl.NodeV name Tmpl.Attr{..}) =
+      do
+        enode <- MaybeT $ DOM.createElement doc (Just name)
+        forM_ attrClass $ \cl ->
+          do
+            DOM.setClassName enode cl
+        forM_ attrAttr $ \(attrName, attrValue) ->
+          do
+            DOM.setAttribute enode attrName attrValue
+        return $ DOM.toNode enode
 
 --
 -- Utility
