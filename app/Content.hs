@@ -38,6 +38,7 @@ import qualified ClassyDOM as Tmpl
 
 instance Tmpl.Template "hdon_status"
   where
+    type Data "hdon_status" = Hdon.Account
     type Structure "hdon_status" =
         'Tmpl.NodeT "div" "hdon_status"
           '[
@@ -47,19 +48,19 @@ instance Tmpl.Template "hdon_status"
                ]
            ]
 
-instance Tmpl.BuildNode Hdon.Account "hdon_status" "name"
+instance Tmpl.BuildNode "hdon_status" "name"
   where
     css = []
     buildNode acc = Tmpl.Builder (Tmpl.Attr [] []) $
         Tmpl.buildText (Text.pack $ Hdon.accountUsername acc) $ Tmpl.NilBuilder
 
-instance Tmpl.BuildNode Hdon.Account "hdon_status" "hdon_status"
+instance Tmpl.BuildNode "hdon_status" "hdon_status"
   where
     css = []
     buildNode _ = Tmpl.Builder (Tmpl.Attr [] []) $
         Tmpl.buildChild $ Tmpl.NilBuilder
 
-call acc = Tmpl.buildTmpl @ "hdon_status" (acc :: Hdon.Account)
+call acc = Tmpl.buildTmpl @ "hdon_status" acc
 
 toDOM :: MonadIO m => DOM.Document -> Tmpl.TreeV -> m (Maybe DOM.Node)
 toDOM doc (Tree.Node x children) = runMaybeT $

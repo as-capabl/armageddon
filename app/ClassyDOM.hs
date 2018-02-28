@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeApplications #-}
@@ -58,12 +59,13 @@ data TreeT = NodeT Symbol Symbol [TreeT] | TextT
 --
 class Template (name :: Symbol)
   where
+    type Data name :: *
     type Structure name :: TreeT
 
-class BuildNode d tmpl n | tmpl -> d
+class BuildNode tmpl n
   where
     css :: [CSSStyleEntry]
-    buildNode :: d -> Builder d tmpl n
+    buildNode :: Data tmpl -> Builder tmpl n
 
 
 --
@@ -85,72 +87,81 @@ type SubTree s n = SubTreeHelper s '[] '[] n
 --
 -- Builder
 --
-data BuilderElem_ (d :: *) (tmpl :: Symbol) (x :: TreeT)
+data BuilderElem_ (tmpl :: Symbol) (x :: TreeT)
   where
     NodeBuilder ::
-        (x ~ NodeT t n children, BuildNode d tmpl n) =>
-        Proxy n -> BuilderElem_ d tmpl x
+        (x ~ NodeT t n children, BuildNode tmpl n) =>
+        Proxy n -> BuilderElem_ tmpl x
     TextBuilder ::
-        Tx.Text -> BuilderElem_ d tmpl TextT
+        Tx.Text -> BuilderElem_ tmpl TextT
 
-type BuilderElem d tmpl x = forall xs. Builder_ d tmpl xs -> Builder_ d tmpl (x:xs)
+type BuilderElem tmpl x = forall xs. Builder_ tmpl xs -> Builder_ tmpl (x:xs)
 
-data Builder_ (d :: *) (tmpl :: Symbol) (xs :: [TreeT])
+data Builder_ (tmpl :: Symbol) (xs :: [TreeT])
   where
     NilBuilder ::
-        Builder_ d tmpl '[]
+        Builder_ tmpl '[]
     ConsBuilder ::
-        BuilderElem_ d tmpl x -> Builder_ d tmpl xs -> Builder_ d tmpl (x:xs)
+        BuilderElem_ tmpl x -> Builder_ tmpl xs -> Builder_ tmpl (x:xs)
 
-data Builder (d :: *) (tmpl :: Symbol) (n :: Symbol)
+data Builder (tmpl :: Symbol) (n :: Symbol)
   where
     Builder ::
         (SubTree (Structure tmpl) n ~ NodeT t n children, KnownSymbol n) =>
-        Attr -> Builder_ d tmpl children -> Builder d tmpl n
+        Attr -> Builder_ tmpl children -> Builder tmpl n
 
 buildChild ::
-    forall d tmpl n x t ch.
-    (x ~ NodeT t n ch, BuildNode d tmpl n) =>
-    BuilderElem d tmpl x
+    forall tmpl n x t ch.
+    (x ~ NodeT t n ch, BuildNode tmpl n) =>
+    BuilderElem tmpl x
 buildChild = ConsBuilder (NodeBuilder (Proxy @ n))
 
 buildText ::
-    Tx.Text -> BuilderElem d tmpl TextT
+    Tx.Text -> BuilderElem tmpl TextT
 buildText text = ConsBuilder (TextBuilder text)
 
 --
 -- BuildTmpl
 --
-type BuildTmpl d tmpl = BuildNode d tmpl tmpl
+type BuildTmpl tmpl = BuildNode  tmpl tmpl
 
-buildTmpl :: forall tmpl d. BuildTmpl d tmpl => d -> TreeV
+buildTmpl :: forall tmpl. BuildTmpl tmpl => Data tmpl -> TreeV
 buildTmpl d =
-    breakBuilder (buildNode @d @tmpl @tmpl d)
+    breakBuilder (buildNode @tmpl @tmpl d)
   where
-    breakBuilder :: forall n. Builder d tmpl n -> TreeV
+    breakBuilder :: forall n. Builder tmpl n -> TreeV
     breakBuilder (Builder attr bs) =
         Tr.Node (NodeV (Tx.pack $ symbolVal (Proxy @n)) attr) $ breakBuilder_ bs
 
-    breakBuilder_ :: forall n. Builder_ d tmpl n -> [TreeV]
+    breakBuilder_ :: forall n. Builder_ tmpl n -> [TreeV]
     breakBuilder_ NilBuilder = []
     breakBuilder_ (ConsBuilder elem rest) = breakElem elem : breakBuilder_ rest
 
-    breakElem :: forall x. BuilderElem_ d tmpl x -> TreeV
+    breakElem :: forall x. BuilderElem_ tmpl x -> TreeV
     breakElem (NodeBuilder (_ :: Proxy ch)) =
-        breakBuilder (buildNode @d @tmpl @ch d)
+        breakBuilder (buildNode @tmpl @ch d)
     breakElem (TextBuilder txt) =
         Tr.Node (TextNode txt) []
 
 --
 -- makeCSSEntry
 --
-class BuildTmplAll (d :: *) (tmpls :: [Symbol])
+class BuildNodeAll (ts :: [Symbol]) (ns :: [Symbol])
   where
     makeCSSEntry_ :: [CSSEntry]
 
-instance BuildTmplAll d '[]
+instance BuildNodeAll '[] '[]
   where
     makeCSSEntry_ = []
+
+instance (BuildNode t n, BuildNodeAll ts ns) => BuildNodeAll (t:ts) (n:ns)
+  where
+    makeCSSEntry_ = undefined
+
+type family DataAll (ts :: [Symbol]) :: [*]
+
+makeCSSEntry :: forall ts. BuildNodeAll ts ts => [CSSEntry]
+makeCSSEntry = makeCSSEntry_ @ts @ts
 
 {-
 instance (BuildTmpl d x, BuildTmplAll d xs) => BuildTmplAll d (x:xs)
@@ -158,8 +169,10 @@ instance (BuildTmpl d x, BuildTmplAll d xs) => BuildTmplAll d (x:xs)
     makeCSSEntry_ = traverseCSS @Structure x []
 -}
 
+{-
 traverseCSS :: forall (tmpl :: TreeT) d. Selector -> CSSEntry
 traverseCSS = undefined
+-}
 
 {-
 type family BuildTmplAll (d :: *) (tmpls :: [Symbol]) :: Constraint
