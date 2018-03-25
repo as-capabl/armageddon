@@ -4,3 +4,6 @@
 [submodule "machinecell"]
 	path = machinecell
 	url = https://github.com/as-capabl/machinecell
+[submodule "ecke-sachs"]
+	path = ecke-sachs
+	url = ./ecke-sachs

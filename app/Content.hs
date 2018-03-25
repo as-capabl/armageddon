@@ -34,7 +34,7 @@ import qualified Graphics.UI.Gtk.WebKit.DOM.HTMLAnchorElement as DOM
 import qualified Web.Hastodon as Hdon
 
 import BasicModel
-import qualified ClassyDOM as Tmpl
+import qualified Text.HTML.Sachs as Tmpl
 
 instance Tmpl.Template "hdon_status"
   where
