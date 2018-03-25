@@ -19,8 +19,9 @@ module
 where
 
 import GHC.Exts
-import GHC.TypeLits
+import GHC.TypeLits hiding (Text)
 import Data.Proxy
+import Data.Monoid ((<>))
 import qualified Data.Tree as Tr
 import qualified Data.Text as Tx
 
@@ -35,9 +36,21 @@ data NodeV = NodeV Tx.Text Attr | TextNode Tx.Text
 
 type TreeV = Tr.Tree NodeV
 
-type Selector = [Tx.Text] -- reverse ordered, for efficiency
+-- Selector qualifier
+data SQ =
+    SQClass Tx.Text |
+    SQAttrib Tx.Text |
+    SQPseudo Tx.Text
+
+type Selector = [(Tx.Text, [SQ])]
+
 selectorStr :: Selector -> Tx.Text
-selectorStr = Tx.intercalate ">" . reverse
+selectorStr = Tx.intercalate ">" . map ssStr
+  where
+    ssStr (x, l) = x <> foldMap ssiStr l
+    ssiStr (SQClass cls) = "." <> cls
+    ssiStr (SQAttrib attr) = "[" <> attr <> "]"
+    ssiStr (SQPseudo pse) = ":" <> pse
 
 data CSSStyleEntry = CSSStyleEntry
   {
@@ -48,11 +61,12 @@ data CSSStyleEntry = CSSStyleEntry
 data CSSEntry = CSSEntry
   {
     cssSelector :: Selector,
-    cssStyle :: [Tx.Text]
+    cssStyle :: [CSSStyleEntry]
   }
 
+
 -- Type kinds
-data TreeT = NodeT Symbol Symbol [TreeT] | TextT
+data TreeT = N Symbol Symbol [TreeT] | Text
 
 --
 -- Classes (Implemented by users)
@@ -64,7 +78,7 @@ class Template (name :: Symbol)
 
 class BuildNode tmpl n
   where
-    css :: [CSSStyleEntry]
+    css :: MakeCSS tmpl n
     buildNode :: Data tmpl -> Builder tmpl n
 
 
@@ -76,8 +90,8 @@ type family
         (x :: TreeT) (xs :: [TreeT]) (xss :: [[TreeT]]) (n :: Symbol)
         :: TreeT
   where
-    SubTreeHelper (NodeT t n ch) xs xss n = NodeT t n ch
-    SubTreeHelper (NodeT t n0 (ch : chs)) xs xss n =
+    SubTreeHelper (N t n ch) xs xss n = N t n ch
+    SubTreeHelper (N t n0 (ch : chs)) xs xss n =
         SubTreeHelper ch chs (xs:xss) n
     SubTreeHelper z (x:xs) xss n = SubTreeHelper x xs xss n
     SubTreeHelper z '[] (xs:xss) n = SubTreeHelper z xs xss n
@@ -90,10 +104,10 @@ type SubTree s n = SubTreeHelper s '[] '[] n
 data BuilderElem_ (tmpl :: Symbol) (x :: TreeT)
   where
     NodeBuilder ::
-        (x ~ NodeT t n children, BuildNode tmpl n) =>
+        (x ~ N t n children, BuildNode tmpl n) =>
         Proxy n -> BuilderElem_ tmpl x
     TextBuilder ::
-        Tx.Text -> BuilderElem_ tmpl TextT
+        Tx.Text -> BuilderElem_ tmpl Text
 
 type BuilderElem tmpl x = forall xs. Builder_ tmpl xs -> Builder_ tmpl (x:xs)
 
@@ -107,23 +121,23 @@ data Builder_ (tmpl :: Symbol) (xs :: [TreeT])
 data Builder (tmpl :: Symbol) (n :: Symbol)
   where
     Builder ::
-        (SubTree (Structure tmpl) n ~ NodeT t n children, KnownSymbol n) =>
+        (SubTree (Structure tmpl) n ~ N t n children, KnownSymbol n) =>
         Attr -> Builder_ tmpl children -> Builder tmpl n
 
 buildChild ::
     forall tmpl n x t ch.
-    (x ~ NodeT t n ch, BuildNode tmpl n) =>
+    (x ~ N t n ch, BuildNode tmpl n) =>
     BuilderElem tmpl x
 buildChild = ConsBuilder (NodeBuilder (Proxy @ n))
 
 buildText ::
-    Tx.Text -> BuilderElem tmpl TextT
+    Tx.Text -> BuilderElem tmpl Text
 buildText text = ConsBuilder (TextBuilder text)
 
 --
 -- BuildTmpl
 --
-type BuildTmpl tmpl = BuildNode  tmpl tmpl
+type BuildTmpl tmpl = BuildNode tmpl tmpl
 
 buildTmpl :: forall tmpl. BuildTmpl tmpl => Data tmpl -> TreeV
 buildTmpl d =
@@ -142,6 +156,53 @@ buildTmpl d =
         breakBuilder (buildNode @tmpl @ch d)
     breakElem (TextBuilder txt) =
         Tr.Node (TextNode txt) []
+
+--
+--
+--
+data ThisCSS =
+    ThisCSS [CSSStyleEntry] | ThisCSSQ [SQ] [CSSStyleEntry]
+
+data MakeCSS (t :: Symbol) (n :: Symbol)
+  where
+    MakeCSS ::
+        (SubTree (Structure t) n ~ N tag n children, IterateMakeCSS t children) =>
+        [ThisCSS] -> MakeCSS t n
+
+class IterateMakeCSS (t :: Symbol) (ns :: [TreeT])
+  where
+    iterateMakeCSS :: [CSSEntry]
+
+instance IterateMakeCSS tmpl '[]
+  where
+    iterateMakeCSS = []
+
+childMakeCSS ::
+    forall tmpl n children tag.
+    (SubTree (Structure tmpl) n ~ N tag n children, IterateMakeCSS tmpl children) =>
+    [CSSEntry]
+childMakeCSS = iterateMakeCSS @tmpl @children
+
+instance
+    IterateMakeCSS tmpl nds =>
+    IterateMakeCSS tmpl (Text:nds)
+  where
+    iterateMakeCSS = iterateMakeCSS @tmpl @nds
+
+instance
+    (BuildNode tmpl n, KnownSymbol n, IterateMakeCSS tmpl nds) =>
+    IterateMakeCSS tmpl ((N tag n children):nds)
+  where
+    iterateMakeCSS = subtreeCSS (css @tmpl @n) ++ iterateMakeCSS @tmpl @nds
+      where
+        subtreeCSS (MakeCSS x) = (thisCSS <$> x) ++ (addParent <$> childMakeCSS @tmpl @n)
+
+        thisCSS (ThisCSS cnt) = CSSEntry [thisSel []] cnt
+        thisCSS (ThisCSSQ sq cnt) = CSSEntry [thisSel sq] cnt
+
+        addParent (CSSEntry sel cnt) = CSSEntry (thisSel [] : sel) cnt
+
+        thisSel sq = ("", SQClass (Tx.pack (symbolVal $ Proxy @n)) : sq)
 
 --
 -- makeCSSEntry

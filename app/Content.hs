@@ -40,23 +40,23 @@ instance Tmpl.Template "hdon_status"
   where
     type Data "hdon_status" = Hdon.Account
     type Structure "hdon_status" =
-        'Tmpl.NodeT "div" "hdon_status"
+        'Tmpl.N "div" "hdon_status"
           '[
-            'Tmpl.NodeT "a" "name"
+            'Tmpl.N "a" "name"
               '[
-                Tmpl.TextT
+                Tmpl.Text
                ]
            ]
 
 instance Tmpl.BuildNode "hdon_status" "name"
   where
-    css = []
+    css = Tmpl.MakeCSS []
     buildNode acc = Tmpl.Builder (Tmpl.Attr [] []) $
         Tmpl.buildText (Text.pack $ Hdon.accountUsername acc) $ Tmpl.NilBuilder
 
 instance Tmpl.BuildNode "hdon_status" "hdon_status"
   where
-    css = []
+    css = Tmpl.MakeCSS []
     buildNode _ = Tmpl.Builder (Tmpl.Attr [] []) $
         Tmpl.buildChild $ Tmpl.NilBuilder
 
