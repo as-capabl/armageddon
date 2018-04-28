@@ -50,15 +50,23 @@ instance Tmpl.Template "hdon_status"
 
 instance Tmpl.BuildNode "hdon_status" "name"
   where
+    buildNode acc = Tmpl.Builder (Tmpl.Attr []) $
+        Tmpl.buildText (Text.pack $ Hdon.accountUsername acc) $
+        Tmpl.NilBuilder
+
+instance Tmpl.BuildCSS "hdon_status" "name"
+  where
     css = Tmpl.MakeCSS []
-    buildNode acc = Tmpl.Builder (Tmpl.Attr [] []) $
-        Tmpl.buildText (Text.pack $ Hdon.accountUsername acc) $ Tmpl.NilBuilder
 
 instance Tmpl.BuildNode "hdon_status" "hdon_status"
   where
+    buildNode _ = Tmpl.Builder (Tmpl.Attr []) $
+        Tmpl.buildChild $
+        Tmpl.NilBuilder
+
+instance Tmpl.BuildCSS "hdon_status" "hdon_status"
+  where
     css = Tmpl.MakeCSS []
-    buildNode _ = Tmpl.Builder (Tmpl.Attr [] []) $
-        Tmpl.buildChild $ Tmpl.NilBuilder
 
 call acc = Tmpl.buildTmpl @ "hdon_status" acc
 
@@ -72,17 +80,14 @@ toDOM doc (Tree.Node x children) = runMaybeT $
         DOM.appendChild el $ Just chEl
     return el
   where
-    toDOMEl (Tmpl.TextNode txt) =
+    toDOMEl (Tmpl.TextV txt) =
       do
         tnode <- MaybeT $ DOM.createTextNode doc txt
         return $ DOM.toNode tnode
-    toDOMEl (Tmpl.NodeV name Tmpl.Attr{..}) =
+    toDOMEl (Tmpl.NV name attrs) =
       do
         enode <- MaybeT $ DOM.createElement doc (Just name)
-        forM_ attrClass $ \cl ->
-          do
-            DOM.setClassName enode cl
-        forM_ attrAttr $ \(attrName, attrValue) ->
+        forM_ attrs $ \(attrName, attrValue) ->
           do
             DOM.setAttribute enode attrName attrValue
         return $ DOM.toNode enode
