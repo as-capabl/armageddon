@@ -19,7 +19,7 @@ prepareCache =
   do
     stgDir <- getAppUserDataDirectory "armageddon"
     createDirectoryIfMissing True stgDir
-    let cacheFile = stgDir </> "cache.splite3"
+    let cacheFile = stgDir </> "cache.sqlite3"
 
     fileEx <- doesFileExist cacheFile
     conn <-
@@ -87,7 +87,7 @@ defineTypes =
             return $ dir </> "armageddon"
         createDirectoryIfMissing True tmpDir
 
-        let filepath = tmpDir </> "cache.splite3"
+        let filepath = tmpDir </> "cache.sqlite3"
         removePathForcibly filepath
 
         conn <- createCache filepath

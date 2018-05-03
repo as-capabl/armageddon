@@ -23,7 +23,7 @@ prepareAuth =
   do
     stgDir <- getAppUserDataDirectory "armageddon"
     createDirectoryIfMissing True stgDir
-    let authFile = stgDir </> "auth.splite3"
+    let authFile = stgDir </> "auth.sqlite3"
 
     fileEx <- doesFileExist authFile
     conn <-
@@ -50,7 +50,7 @@ defineTypes =
             return $ dir </> "armageddon"
         createDirectoryIfMissing True tmpDir
 
-        let filepath = tmpDir </> "cache.splite3"
+        let filepath = tmpDir </> "cache.sqlite3"
         removePathForcibly filepath
 
         conn <- createAuth filepath
