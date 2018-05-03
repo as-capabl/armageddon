@@ -27,7 +27,6 @@ executable armageddon-app
                      , hashable
                      , hashmap
                      , lens
-                     , unagi-chan
 
                      , transformers-base
                      , monad-control
@@ -42,9 +41,9 @@ executable armageddon-app
                      , filepath
                      , filelock
 
-                     , glib
-                     , gtk
-                     , webkit
+                     , gi-glib
+                     , gi-gtk
+                     , gi-webkit2
 
                      , Hastodon
 
@@ -85,7 +84,6 @@ library
                      , hashable
                      , hashmap
                      , lens
-                     , unagi-chan
 
                      , transformers-base
                      , monad-control

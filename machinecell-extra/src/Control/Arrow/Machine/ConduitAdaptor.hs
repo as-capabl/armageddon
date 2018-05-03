@@ -17,6 +17,7 @@ import Control.Monad (forever)
 
 import Control.Arrow.Machine.Automaton
 
+{-
 instance
     Monad m =>
     Automaton (Conduit.ConduitM i o m r) m i o
@@ -27,13 +28,16 @@ instance
             cd'' = sourcePlan =$= cd' =$= sinkPlan
           in
             Conduit.runConduit cd''
+-}
 
+{-
 instance
     Monad m =>
     Automaton (Conduit.ResumableSource m o) m () o
   where
     auto rs =
         hoist lift rs $$+- sinkPlan 
+-}
 
 --
 -- private
@@ -43,7 +47,8 @@ sourcePlan ::
 sourcePlan = forever $
   do
     x <- lift Machinecell.await
-    Conduit.yieldOr x Machinecell.stop
+    -- Conduit.yieldOr x Machinecell.stop
+    Conduit.yield x
 
 sinkPlan ::
     Monad m => Conduit.Sink a (Machinecell.PlanT s a m) r
