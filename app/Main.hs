@@ -52,8 +52,6 @@ import qualified DataModel
 import qualified Async
 import qualified MainForm
 import qualified AuthDialog
-import qualified ClassyDOM
-
 import Debug.Trace
 
 type TheWorld = World IO IO GtkRunner

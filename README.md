@@ -4,8 +4,9 @@ GUI mastodon client written in Haskell
 ## How to build
 Build requirements are below.
 
-- External library
-    - libgtk
+- External library (via pkg-config)
+    - gtk+-2.0
+    - webkit-1.0
     - sqlite3
 - Build tool
     - [stack](https://docs.haskellstack.org/en/stable/README/)
@@ -22,12 +23,16 @@ Experimental.
 
 - [X] Authentication to arbitrary host
 - [X] Save credentials
-- [ ] Fetch notification
+- [X] Fetch notification
 - [ ] Show user profile
 - [X] Show icons
-- [ ] Cache timelines
+- [X] Cache timelines
 - [X] Control timeline flow
     - [X] Show "read more"
     - [X] Stop fetching toots unless the scroll position is on top
+- [ ] Reply
+- [ ] Post media
+- [ ] Search
+- [ ] Secure authentication
 - and more ...
 
