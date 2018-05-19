@@ -25,12 +25,12 @@ import Data.Maybe (catMaybes, fromMaybe)
 import Data.Char (chr)
 import Data.Proxy (Proxy(Proxy))
 
-import qualified Graphics.UI.Gtk.WebKit.DOM.Document as DOM
-import qualified Graphics.UI.Gtk.WebKit.DOM.Element as DOM
-import qualified Graphics.UI.Gtk.WebKit.DOM.Node as DOM
-import qualified Graphics.UI.Gtk.WebKit.DOM.CSSStyleDeclaration as DOM
-import qualified Graphics.UI.Gtk.WebKit.DOM.HTMLImageElement as DOM
-import qualified Graphics.UI.Gtk.WebKit.DOM.HTMLAnchorElement as DOM
+import qualified GI.Webkit.Objects.DOMDocument as DOM
+import qualified GI.Webkit.Objects.DOMElement as DOM
+import qualified GI.Webkit.Objects.DOMNode as DOM
+import qualified GI.Webkit.Objects.DOMCSSStyleDeclaration as DOM
+import qualified GI.Webkit.Objects.DOMHTMLImageElement as DOM
+import qualified GI.Webkit.Objects.DOMHTMLAnchorElement as DOM
 import qualified Web.Hastodon as Hdon
 
 import BasicModel

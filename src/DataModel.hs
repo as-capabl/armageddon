@@ -43,6 +43,7 @@ import Database.HDBC (commit, disconnect)
 import Database.HDBC.Sqlite3
 import Database.HDBC.Query.TH
 import Database.HDBC.Record
+import Database.Record.Persistable
 import System.FilePath
 import System.Directory
 import Data.Time.Format
@@ -350,6 +351,7 @@ writeStatusCache hn dsKind sts = when (isCachableDS dsKind) $ R.runResourceT $
         return (addSts, addAccs, updAccs)
 
     divideByDB ::
+        PersistableWidth a =>
         Connection -> [a] -> (a -> Maybe BMText) -> Relation () a -> Pi a (Maybe BMText) ->
         IO ([a], [a])
     divideByDB conn l0 pickId record fldId =
@@ -477,17 +479,19 @@ onSelDS model = proc world ->
   do
     onMailboxPost $ model ^. selDSMBox -< world
 
-readDSS :: DataSource' DSSKind -> ProcessT (R.ResourceT IO) (Event ()) (Event Hdon.Status)
-readDSS ds0 = constructT $
+readDSS ::
+    WorldRunner IO IO (runner IO IO) =>
+    DataSource' DSSKind -> TheMBox runner Hdon.Status -> IO ()
+readDSS ds0 mb = (() <$) $ forkIO $ R.runResourceT $
   do
-    auto $ (C.catchC (sourceReadDs ds0) (liftIO . printEx)) C.=$= filterUpdateC
+    C.runConduit $ (C.catchC (sourceReadDs ds0) (liftIO . printEx)) C.=$= filterUpdateC
   where
     sourceReadDs ds@(DataSource _ DSHome) = Hdon.sourceUserTimeline (ds ^. hastodonClient)
     sourceReadDs (DataSource _ (DSUserStatus _)) = return ()
     sourceReadDs ds = Hdon.sourcePublicTimeline (ds ^. hastodonClient)
 
     filterUpdateC = C.awaitForever $ \case
-        Hdon.StreamUpdate x -> C.yield x
+        Hdon.StreamUpdate x -> liftIO $ mailboxPost mb x
         _ -> return ()
 
     printEx :: CA.ParseError -> IO ()

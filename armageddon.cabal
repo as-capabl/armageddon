@@ -43,7 +43,7 @@ executable armageddon-app
 
                      , gi-glib
                      , gi-gtk
-                     , gi-webkit2
+                     , gi-webkit
 
                      , Hastodon
 
@@ -54,6 +54,7 @@ executable armageddon-app
                      , relational-record
                      , relational-query
                      , relational-query-HDBC
+
 
                      , armageddon
 
@@ -106,6 +107,7 @@ library
                      , relational-record
                      , relational-query
                      , relational-query-HDBC
+                     , persistable-record
 
 
   default-language:    Haskell2010

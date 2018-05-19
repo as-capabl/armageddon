@@ -45,8 +45,10 @@ packages:
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
 extra-deps:
-- gi-webkit2-4.0.18
-- gi-javascriptcore-4.0.15
+#- gi-webkit2-4.0.18
+- gi-webkit-3.0.15
+#- gi-javascriptcore-4.0.15
+- gi-javascriptcore-3.0.15
 - gi-soup-2.4.16
 - HDBC-sqlite3-2.3.3.1
 
